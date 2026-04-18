@@ -1,0 +1,86 @@
+.prediction-result {
+  margin-bottom: 2rem;
+  animation: fadeIn 0.5s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.result-header h2 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.main-prediction {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  background: #f1f5f9;
+  padding: 1.5rem;
+  border-radius: 12px;
+  border-left: 5px solid var(--primary-color);
+  margin-bottom: 1.5rem;
+}
+
+.class-name {
+  font-size: 2rem;
+  font-weight: 800;
+  text-transform: capitalize;
+  color: var(--primary-color);
+}
+
+.confidence {
+  font-size: 1.1rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.probabilities-chart h3 {
+  font-size: 1.1rem;
+  margin-bottom: 1rem;
+  color: var(--text-secondary);
+}
+
+.prob-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.prob-label {
+  flex: 0 0 80px;
+  font-size: 0.875rem;
+  text-transform: capitalize;
+  font-weight: 500;
+}
+
+.prob-bar-container {
+  flex: 1;
+  height: 8px;
+  background-color: #e2e8f0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.prob-bar {
+  height: 100%;
+  background-color: #cbd5e1;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.prob-bar.active {
+  background-color: var(--primary-color);
+}
+
+.prob-value {
+  flex: 0 0 50px;
+  font-size: 0.75rem;
+  text-align: right;
+  color: var(--text-secondary);
+}

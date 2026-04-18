@@ -1,0 +1,9 @@
+backend/data/
+backend/saved_*.keras
+backend/saved_*.pt
+__pycache__/
+*.pyc
+node_modules/
+.env
+.vscode/
+.DS_Store
