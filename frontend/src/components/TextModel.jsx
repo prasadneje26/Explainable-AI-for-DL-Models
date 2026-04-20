@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import axios from 'axios';
 
 const EXAMPLES = [
-  "This movie was absolutely fantastic! The acting was superb and the story was gripping.",
-  "Terrible film. Boring plot, bad acting, complete waste of time.",
-  "An average movie with some good moments but overall disappointing.",
+  { label: 'Positive review', text: "This movie was absolutely fantastic! The acting was superb and the story was gripping from start to finish. A masterpiece of cinema." },
+  { label: 'Negative review', text: "Terrible film. Boring plot, bad acting and a complete waste of two hours. I would not recommend this to anyone." },
+  { label: 'Mixed review',    text: "The visuals were stunning but the script was disappointing. Great soundtrack though. Average overall." },
 ];
 
 export default function TextModel({ api, onResult, onError, onLoading, loading }) {
@@ -27,33 +27,42 @@ export default function TextModel({ api, onResult, onError, onLoading, loading }
   return (
     <div className="model-form">
       <h2>📝 Text LSTM</h2>
-      <p style={{color:'#64748b',fontSize:'0.875rem',marginTop:0}}>
-        Enter a movie review — classified as Positive or Negative sentiment
+      <p className="subtitle">
+        Enter a movie review. The Bidirectional LSTM reads the text as a word sequence
+        (up to 200 words) and classifies it as Positive or Negative.
+        SHAP GradientExplainer reveals which words drove the sentiment decision.
       </p>
 
       <div className="form-group">
-        <label>Your Text</label>
-        <textarea value={text} onChange={e => setText(e.target.value)}
-          placeholder="Type a movie review here..." rows={5} />
+        <label>Review Text</label>
+        <textarea
+          value={text}
+          onChange={e => setText(e.target.value)}
+          placeholder="Type or paste a movie review here…"
+          rows={5}
+        />
       </div>
 
-      <div style={{marginBottom:'1rem'}}>
-        <label style={{fontSize:'0.8rem',color:'#64748b',fontWeight:600}}>Try an example:</label>
-        <div style={{display:'flex',flexDirection:'column',gap:'0.4rem',marginTop:'0.4rem'}}>
+      <div className="examples-section">
+        <span className="examples-label">Load an example</span>
+        <div className="example-btns">
           {EXAMPLES.map((ex, i) => (
-            <button key={i} onClick={() => setText(ex)}
-              style={{textAlign:'left',padding:'0.4rem 0.6rem',fontSize:'0.78rem',
-                background:'#f1f5f9',border:'1px solid #e2e8f0',borderRadius:'6px',cursor:'pointer'}}>
-              {ex.slice(0, 60)}...
+            <button key={i} className="example-btn" onClick={() => setText(ex.text)}>
+              <strong>{ex.label}:</strong>{' '}{ex.text.slice(0, 70)}…
             </button>
           ))}
         </div>
       </div>
 
-      <button className="btn-primary" onClick={handleSubmit}
-        disabled={!text.trim() || loading}>
-        {loading ? 'Analyzing...' : 'Predict & Explain'}
+      <button className="btn-primary" onClick={handleSubmit} disabled={!text.trim() || loading}>
+        {loading ? 'Analyzing…' : 'Predict & Explain'}
       </button>
+
+      <div className="info-note">
+        <strong>Note:</strong> The LSTM reads up to 200 words as a sequence (word order matters!).
+        Words not in the 10,000-word IMDB vocabulary are skipped.
+        SHAP analysis takes ~30–60 s (GradientExplainer over embedding space).
+      </div>
     </div>
   );
 }

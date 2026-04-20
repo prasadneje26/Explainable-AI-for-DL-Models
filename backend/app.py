@@ -12,8 +12,8 @@ import tensorflow as tf
 
 from models import load_model_for, MODEL_INFO
 from data import (
-    MNIST_CLASSES, SENTIMENT_LABELS, IRIS_CLASSES, AUDIO_CLASSES,
-    preprocess_image, preprocess_text, preprocess_tabular, preprocess_audio,
+    CIFAR10_CLASSES, SENTIMENT_LABELS, IRIS_CLASSES, AUDIO_CLASSES,
+    preprocess_image, text_to_sequence, preprocess_tabular, preprocess_audio,
     get_image_background, get_text_background,
     get_tabular_background, get_audio_background, AUDIO_LEN
 )
@@ -26,23 +26,31 @@ app.add_middleware(CORSMiddleware,
 
 _models, _explainers = {}, {}
 
+
 def _model(t):
     if t not in _models:
         _models[t] = load_model_for(t)
     return _models[t]
 
+
 def _exp(t):
     if t not in _explainers:
         m  = _model(t)
-        bg = {'image': get_image_background, 'text': get_text_background,
-              'tabular': get_tabular_background, 'audio': get_audio_background}[t]()
-        _explainers[t] = {'image': ImageSHAP, 'text': TextSHAP,
-                          'tabular': TabularSHAP, 'audio': AudioSHAP}[t](m, bg)
+        bg = {'image':   get_image_background,
+              'text':    get_text_background,
+              'tabular': get_tabular_background,
+              'audio':   get_audio_background}[t]()
+        _explainers[t] = {'image':   ImageSHAP,
+                          'text':    TextSHAP,
+                          'tabular': TabularSHAP,
+                          'audio':   AudioSHAP}[t](m, bg)
     return _explainers[t]
+
 
 def _top(probs, labels):
     i = int(np.argmax(probs))
     return labels[i], float(probs[i]), i
+
 
 def _all(probs, labels):
     return [{"class": labels[i], "probability": float(probs[i])} for i in range(len(labels))]
@@ -52,73 +60,81 @@ def _all(probs, labels):
 async def health():
     return {"status": "ok", "models": list(MODEL_INFO.keys())}
 
+
 @app.get("/models")
 async def get_models():
     return {"models": MODEL_INFO}
 
 
-# ── 1. Image ──────────────────────────────────────────────────────────────────
+# ── 1. Image (CIFAR-10 CNN) ────────────────────────────────────────────────────
 
 @app.post("/predict/image")
 async def predict_image(file: UploadFile = File(...)):
     try:
         pil   = Image.open(io.BytesIO(await file.read()))
-        inp   = preprocess_image(pil)
+        inp   = preprocess_image(pil)                          # (1,32,32,3)
         probs = _model('image').predict(inp, verbose=0)[0]
-        label, conf, idx = _top(probs, MNIST_CLASSES)
+        label, conf, idx = _top(probs, CIFAR10_CLASSES)
 
-        # returns (overlay_b64, plot_b64, deep_text)
-        overlay, plot, deep = _exp('image').explain(inp, idx)
+        overlay, plot, deep, bullets = _exp('image').explain(inp, idx)
 
         return {
             "success": True,
-            "model": "Image CNN", "dataset": "MNIST",
-            "input_type": "Image (Grayscale 28x28)",
+            "model": "Image CNN", "dataset": "CIFAR-10",
+            "input_type": "Image (32×32 RGB)",
             "shap_method": "DeepExplainer",
             "prediction": label, "confidence": conf,
-            "all_predictions": _all(probs, MNIST_CLASSES),
+            "all_predictions": _all(probs, CIFAR10_CLASSES),
             "shap_overlay": overlay,
             "shap_plot": plot,
-            "explanation": f"SHAP DeepExplainer shows which pixels drove the prediction of digit '{label}'.",
-            "shap_description": "Bright/hot pixels = most important for this digit. Dark = less relevant.",
-            "deep_explanation": deep
+            "explanation": f"SHAP DeepExplainer shows which pixels drove the prediction of '{label}'.",
+            "shap_description": "Green pixels = support the prediction. Red pixels = oppose it. Brightness = magnitude.",
+            "deep_explanation": deep,
+            "explanation_bullets": bullets,
+            "theory": MODEL_INFO['image']['theory'],
+            "architecture": MODEL_INFO['image']['architecture'],
         }
     except Exception as e:
+        import traceback; traceback.print_exc()
         return {"success": False, "error": str(e)}
 
 
-# ── 2. Text ───────────────────────────────────────────────────────────────────
+# ── 2. Text (Bidirectional LSTM) ──────────────────────────────────────────────
 
 class TextInput(BaseModel):
     text: str
 
+
 @app.post("/predict/text")
 async def predict_text(body: TextInput):
     try:
-        inp   = preprocess_text(body.text)
-        probs = _model('text').predict(inp, verbose=0)[0]
+        seq, matched_words = text_to_sequence(body.text)      # (1, 200) int32
+        probs = _model('text').predict(seq, verbose=0)[0]
         label, conf, idx = _top(probs, SENTIMENT_LABELS)
 
-        # returns (plot_b64, deep_text)
-        plot, deep = _exp('text').explain(inp, idx, body.text)
+        plot, deep, bullets = _exp('text').explain(seq, idx, body.text)
 
         return {
             "success": True,
-            "model": "Text DNN", "dataset": "IMDB Reviews",
-            "input_type": "Text (Bag-of-Words)",
-            "shap_method": "KernelExplainer",
+            "model": "Text LSTM", "dataset": "IMDB Reviews",
+            "input_type": "Text (Bidirectional LSTM sequence)",
+            "shap_method": "GradientExplainer",
             "prediction": label, "confidence": conf,
             "all_predictions": _all(probs, SENTIMENT_LABELS),
             "shap_plot": plot,
-            "explanation": f"SHAP KernelExplainer shows which words most influenced the '{label}' prediction.",
-            "shap_description": "Green bars = words that pushed toward this sentiment. Red = pushed against.",
-            "deep_explanation": deep
+            "explanation": f"SHAP GradientExplainer shows which words most influenced the '{label}' prediction.",
+            "shap_description": "Green bars = words that push toward this sentiment. Red = push away. Computed via embedding-space gradient attribution.",
+            "deep_explanation": deep,
+            "explanation_bullets": bullets,
+            "theory": MODEL_INFO['text']['theory'],
+            "architecture": MODEL_INFO['text']['architecture'],
         }
     except Exception as e:
+        import traceback; traceback.print_exc()
         return {"success": False, "error": str(e)}
 
 
-# ── 3. Tabular ────────────────────────────────────────────────────────────────
+# ── 3. Tabular (Iris DNN) ─────────────────────────────────────────────────────
 
 class TabularInput(BaseModel):
     sepal_length: float
@@ -126,17 +142,17 @@ class TabularInput(BaseModel):
     petal_length: float
     petal_width:  float
 
+
 @app.post("/predict/tabular")
 async def predict_tabular(body: TabularInput):
     try:
-        raw   = [body.sepal_length, body.sepal_width,
-                 body.petal_length, body.petal_width]
-        inp   = preprocess_tabular(raw)
+        raw  = [body.sepal_length, body.sepal_width,
+                body.petal_length, body.petal_width]
+        inp  = preprocess_tabular(raw)
         probs = _model('tabular').predict(inp, verbose=0)[0]
         label, conf, idx = _top(probs, IRIS_CLASSES)
 
-        # returns (plot_b64, deep_text) — raw needed for dual-axis chart
-        plot, deep = _exp('tabular').explain(inp, idx, label, raw)
+        plot, deep, bullets = _exp('tabular').explain(inp, idx, label, raw)
 
         return {
             "success": True,
@@ -148,13 +164,16 @@ async def predict_tabular(body: TabularInput):
             "shap_plot": plot,
             "explanation": f"SHAP KernelExplainer shows which measurements drove the '{label}' prediction.",
             "shap_description": "Green bars = measurements that pushed toward this species. Red = pushed against.",
-            "deep_explanation": deep
+            "deep_explanation": deep,
+            "explanation_bullets": bullets,
+            "theory": MODEL_INFO['tabular']['theory'],
+            "architecture": MODEL_INFO['tabular']['architecture'],
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
-# ── 4. Audio ──────────────────────────────────────────────────────────────────
+# ── 4. Audio (1D-CNN) ─────────────────────────────────────────────────────────
 
 @app.post("/predict/audio")
 async def predict_audio(
@@ -172,24 +191,26 @@ async def predict_audio(
                 'noise':  np.random.normal(0, 1, AUDIO_LEN)
             }.get(signal_type, np.sin(5 * t)).astype(np.float32)
 
-        inp   = preprocess_audio(signal)
+        inp   = preprocess_audio(signal)                       # (1, 1000, 1)
         probs = _model('audio').predict(inp, verbose=0)[0]
         label, conf, idx = _top(probs, AUDIO_CLASSES)
 
-        # returns (plot_b64, deep_text)
-        plot, deep = _exp('audio').explain(inp, idx, label)
+        plot, deep, bullets = _exp('audio').explain(inp, idx, label)
 
         return {
             "success": True,
             "model": "Audio 1D-CNN", "dataset": "Synthetic Signals",
-            "input_type": "Audio / Signal (1D Waveform)",
+            "input_type": "Audio / Signal (1D Waveform, 1000 steps)",
             "shap_method": "GradientExplainer",
             "prediction": label, "confidence": conf,
             "all_predictions": _all(probs, AUDIO_CLASSES),
             "shap_plot": plot,
             "explanation": f"SHAP GradientExplainer shows which time steps drove the '{label}' prediction.",
             "shap_description": "Green regions = time steps that pushed toward this class. Red = pushed against.",
-            "deep_explanation": deep
+            "deep_explanation": deep,
+            "explanation_bullets": bullets,
+            "theory": MODEL_INFO['audio']['theory'],
+            "architecture": MODEL_INFO['audio']['architecture'],
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -197,6 +218,4 @@ async def predict_audio(
 
 if __name__ == "__main__":
     import uvicorn
-    print("Starting XAI Backend — 4 Deep Learning Models")
-    print("Docs: http://localhost:8000/docs")
     uvicorn.run(app, host="127.0.0.1", port=8000, log_level="info")

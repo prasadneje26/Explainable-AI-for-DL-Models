@@ -1,59 +1,251 @@
-.result-panel { animation: fadeIn 0.4s ease; }
-@keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+/* ── Result Panel ──────────────────────────────────────────────── */
+.result-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  animation: fadeSlide 0.3s ease;
+}
+@keyframes fadeSlide {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
 
-.result-header { display:flex; align-items:center; gap:0.5rem; margin-bottom:1rem; flex-wrap:wrap; }
-.model-badge   { background:linear-gradient(135deg,#6366f1,#a855f7); color:white; font-size:0.72rem; font-weight:700; padding:0.25rem 0.7rem; border-radius:9999px; }
-.dataset-badge { background:#f1f5f9; color:#475569; font-size:0.72rem; font-weight:600; padding:0.25rem 0.7rem; border-radius:9999px; border:1px solid #e2e8f0; }
-.method-badge  { background:#f0fdf4; color:#166534; font-size:0.72rem; font-weight:600; padding:0.25rem 0.7rem; border-radius:9999px; border:1px solid #86efac; }
+/* ── Header Badges ──────────────────────────────────────────────── */
+.result-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.2rem 0.65rem;
+  border-radius: 4px;
+  letter-spacing: 0.02em;
+}
+.badge-model   { background: #1e3a8a; color: #bfdbfe; }
+.badge-dataset { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+.badge-method  { background: #f0fdf4; color: #166534; border: 1px solid #86efac; }
 
+/* ── Prediction Box ─────────────────────────────────────────────── */
 .prediction-box {
-  background:#f1f5f9; padding:1.25rem 1.5rem;
-  border-radius:10px; border-left:5px solid #6366f1; margin-bottom:1.5rem;
+  border: 1.5px solid #e2e8f0;
+  border-left: 5px solid #2563eb;
+  border-radius: 8px;
+  padding: 1.1rem 1.25rem;
+  background: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
 }
-.pred-main { display:flex; align-items:baseline; gap:1rem; }
-.pred-label { font-size:2rem; font-weight:800; text-transform:capitalize; color:#6366f1; }
-.pred-conf  { font-size:1.1rem; font-weight:700; }
-.pred-sub   { margin:0.3rem 0 0; font-size:0.8rem; color:#64748b; }
-
-.prob-section h4 { margin:0 0 0.75rem; font-size:0.875rem; color:#64748b; font-weight:600; }
-.prob-row { display:flex; align-items:center; gap:0.75rem; margin-bottom:0.4rem; }
-.prob-name { flex:0 0 90px; font-size:0.8rem; font-weight:500; text-transform:capitalize; }
-.prob-track { flex:1; height:8px; background:#e2e8f0; border-radius:4px; overflow:hidden; }
-.prob-fill { height:100%; background:#cbd5e1; border-radius:4px; transition:width 0.5s ease; }
-.prob-fill.top { background:#6366f1; }
-.prob-val { flex:0 0 45px; font-size:0.75rem; text-align:right; color:#64748b; }
-
-.shap-section { margin-top:1.5rem; padding-top:1.25rem; border-top:1px solid #e2e8f0; }
-.shap-section h4 { margin:0 0 0.4rem; font-size:0.95rem; font-weight:700; }
-.shap-hint { font-size:0.82rem; color:#64748b; margin:0 0 1rem; }
-
-.overlay-wrap { text-align:center; margin-bottom:1rem; }
-.overlay-wrap img { width:140px; border-radius:6px; image-rendering:pixelated; display:block; margin:0 auto; }
-.overlay-wrap p { font-size:0.75rem; color:#94a3b8; margin:0.3rem 0 0; }
-
-.plot-wrap img { width:100%; border-radius:8px; border:1px solid #e2e8f0; }
-
-.deep-section {
-  margin-top:1.25rem; padding:1rem 1.25rem;
-  background:#fffbeb; border-left:4px solid #f59e0b;
-  border-radius:8px;
+.pred-left {}
+.pred-label {
+  font-size: 1.7rem;
+  font-weight: 800;
+  color: #0f172a;
+  text-transform: capitalize;
+  line-height: 1.1;
 }
-.deep-section h4 { margin:0 0 0.5rem; font-size:0.9rem; font-weight:700; color:#92400e; }
-.deep-section p  { margin:0; font-size:0.85rem; color:#78350f; line-height:1.6; }
+.pred-sub {
+  font-size: 0.78rem;
+  color: #64748b;
+  margin-top: 0.2rem;
+}
+.pred-conf-block {
+  text-align: right;
+  flex-shrink: 0;
+}
+.pred-conf-value {
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+.pred-conf-label {
+  font-size: 0.72rem;
+  color: #64748b;
+  margin-top: 0.15rem;
+}
 
-.theory-section { margin-top:1rem; }
+/* ── Probabilities ──────────────────────────────────────────────── */
+.probs-section {}
+.probs-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #94a3b8;
+  margin: 0 0 0.6rem;
+}
+.prob-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-bottom: 0.45rem;
+}
+.prob-name {
+  flex: 0 0 88px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  text-transform: capitalize;
+  color: #334155;
+}
+.prob-track {
+  flex: 1;
+  height: 7px;
+  background: #e2e8f0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.prob-fill {
+  height: 100%;
+  background: #cbd5e1;
+  border-radius: 4px;
+  transition: width 0.6s ease;
+}
+.prob-fill.top { background: #2563eb; }
+.prob-val {
+  flex: 0 0 46px;
+  font-size: 0.78rem;
+  text-align: right;
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Divider ────────────────────────────────────────────────────── */
+.divider {
+  height: 1px;
+  background: #e2e8f0;
+  margin: 0;
+}
+
+/* ── SHAP Section ───────────────────────────────────────────────── */
+.shap-section {}
+.section-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #94a3b8;
+  margin: 0 0 0.5rem;
+}
+.shap-hint {
+  font-size: 0.82rem;
+  color: #64748b;
+  margin: 0 0 0.9rem;
+  line-height: 1.4;
+}
+
+.overlay-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 0.9rem;
+}
+.overlay-box {
+  flex-shrink: 0;
+  text-align: center;
+}
+.overlay-box img {
+  width: 120px;
+  border-radius: 6px;
+  image-rendering: pixelated;
+  display: block;
+  border: 1px solid #e2e8f0;
+}
+.overlay-box p {
+  font-size: 0.7rem;
+  color: #94a3b8;
+  margin: 0.25rem 0 0;
+}
+
+.shap-plot {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  display: block;
+}
+
+/* ── Deep Explanation ───────────────────────────────────────────── */
+.explanation-section {}
+
+.explanation-summary {
+  font-size: 0.88rem;
+  color: #334155;
+  line-height: 1.65;
+  padding: 0.85rem 1rem;
+  background: #fffbeb;
+  border-left: 4px solid #f59e0b;
+  border-radius: 6px;
+  margin-bottom: 0.9rem;
+}
+
+.bullets-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.bullet-item {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: #334155;
+  padding: 0.5rem 0.75rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+}
+.bullet-icon {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  background: #2563eb;
+  color: white;
+  border-radius: 50%;
+  font-size: 0.6rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1px;
+}
+
+/* ── Theory Toggle ──────────────────────────────────────────────── */
+.theory-section { margin-top: 0.25rem; }
 .theory-toggle {
-  width:100%; padding:0.6rem; background:#f8fafc;
-  border:1px solid #e2e8f0; border-radius:8px;
-  font-size:0.85rem; font-weight:600; color:#475569;
-  cursor:pointer; text-align:left; transition:all 0.2s;
+  width: 100%;
+  padding: 0.55rem 0.85rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
-.theory-toggle:hover { background:#f1f5f9; }
+.theory-toggle:hover { background: #f1f5f9; }
+
 .theory-body {
-  margin-top:0.5rem; padding:1rem;
-  background:#f8fafc; border-radius:8px;
-  border:1px solid #e2e8f0; font-size:0.83rem;
-  color:#475569; line-height:1.6;
+  margin-top: 0.5rem;
+  padding: 0.9rem 1rem;
+  background: #f8fafc;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  font-size: 0.83rem;
+  color: #475569;
+  line-height: 1.6;
 }
-.theory-body p { margin:0.4rem 0; }
-.theory-body strong { color:#1e293b; }
+.theory-body p { margin: 0.3rem 0; }
+.theory-body strong { color: #1e293b; }

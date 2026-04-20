@@ -5,16 +5,15 @@ import TextModel from './components/TextModel';
 import TabularModel from './components/TabularModel';
 import AudioModel from './components/AudioModel';
 import ResultPanel from './components/ResultPanel';
-import ExplanationView from './components/ExplanationView';
 import './App.css';
 
 const API = '';
 
 const TABS = [
-  { id: 'image',   label: 'Image CNN',     icon: '🖼️',  desc: 'CIFAR-10 Classification' },
-  { id: 'text',    label: 'Text LSTM',     icon: '📝',  desc: 'Sentiment Analysis' },
-  { id: 'tabular', label: 'Tabular DNN',   icon: '📊',  desc: 'Iris Classification' },
-  { id: 'audio',   label: 'Audio 1D-CNN',  icon: '🎵',  desc: 'Signal Classification' },
+  { id: 'image',   label: 'Image CNN',    icon: '🖼️',  desc: 'CIFAR-10 Recognition' },
+  { id: 'text',    label: 'Text LSTM',    icon: '📝',  desc: 'Sentiment Analysis' },
+  { id: 'tabular', label: 'Tabular DNN',  icon: '📊',  desc: 'Iris Classification' },
+  { id: 'audio',   label: 'Audio 1D-CNN', icon: '🎵',  desc: 'Signal Classification' },
 ];
 
 export default function App() {
@@ -25,13 +24,15 @@ export default function App() {
 
   const handleResult = (res) => { setResult(res); setError(null); };
   const handleError  = (e)   => { setError(e);    setResult(null); };
-  const handleLoad   = (v)   => { setLoading(v); if (v) { setResult(null); setError(null); } };
+  const handleLoad   = (v)   => { setLoading(v);  if (v) { setResult(null); setError(null); } };
 
   const switchTab = (id) => {
     setActiveTab(id);
     setResult(null);
     setError(null);
   };
+
+  const inputProps = { api: API, onResult: handleResult, onError: handleError, onLoading: handleLoad, loading };
 
   return (
     <div className="App">
@@ -40,8 +41,6 @@ export default function App() {
       <main className="main-content">
         <div className="container">
 
-
-          {/* Tab bar */}
           <div className="tab-bar">
             {TABS.map(tab => (
               <button
@@ -57,38 +56,40 @@ export default function App() {
           </div>
 
           <div className="content-grid">
-            {/* Left: Input panel */}
             <div className="section input-section">
-              {activeTab === 'image'   && <ImageModel   api={API} onResult={handleResult} onError={handleError} onLoading={handleLoad} loading={loading} />}
-              {activeTab === 'text'    && <TextModel    api={API} onResult={handleResult} onError={handleError} onLoading={handleLoad} loading={loading} />}
-              {activeTab === 'tabular' && <TabularModel api={API} onResult={handleResult} onError={handleError} onLoading={handleLoad} loading={loading} />}
-              {activeTab === 'audio'   && <AudioModel   api={API} onResult={handleResult} onError={handleError} onLoading={handleLoad} loading={loading} />}
+              {activeTab === 'image'   && <ImageModel   {...inputProps} />}
+              {activeTab === 'text'    && <TextModel    {...inputProps} />}
+              {activeTab === 'tabular' && <TabularModel {...inputProps} />}
+              {activeTab === 'audio'   && <AudioModel   {...inputProps} />}
             </div>
 
-            {/* Right: Result panel */}
             <div className="section results-section">
-              {error   && <div className="error-banner">Error: {error}</div>}
+              {error   && <div className="error-banner">⚠ {error}</div>}
+
               {loading && (
                 <div className="loading">
-                  <div className="spinner"></div>
-                  <p>Running model + generating explanations...</p>
-                  <p className="loading-sub">May take 15–30s on CPU</p>
+                  <div className="spinner" />
+                  <p>Running model + computing SHAP explanations…</p>
+                  <p className="loading-sub">This can take 15–60 s on CPU (KernelExplainer is slow)</p>
                 </div>
               )}
+
               {result && !loading && <ResultPanel result={result} />}
-              {result && !loading && result.explanations && <ExplanationView explanations={result.explanations} />}
+
               {!result && !loading && !error && (
                 <div className="placeholder">
-                  <p>Fill in the input on the left and click Predict</p>
+                  <span className="placeholder-icon">🔬</span>
+                  <p>Fill in the input on the left and click <strong>Predict & Explain</strong></p>
+                  <p style={{fontSize:'0.8rem', marginTop:'0.5rem', color:'#cbd5e1'}}>
+                    Results will include the model prediction, class probabilities,<br/>SHAP visualizations, and a detailed explanation.
+                  </p>
                 </div>
               )}
             </div>
           </div>
 
-
         </div>
       </main>
-
     </div>
   );
 }

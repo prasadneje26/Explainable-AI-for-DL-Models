@@ -5,7 +5,11 @@ export default function Navbar() {
   return (
     <nav className="navbar">
       <div className="navbar-container">
-        <div className="navbar-brand">XAI — Explainable AI</div>
+        <div className="navbar-brand">
+          <span>XAI</span>
+          <span className="brand-accent">—</span>
+          <span>Explainable AI Dashboard</span>
+        </div>
         <div className="navbar-info">
           <span className="info-badge">TensorFlow</span>
           <span className="info-badge">SHAP</span>

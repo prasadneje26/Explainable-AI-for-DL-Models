@@ -13,6 +13,12 @@ export default function ImageModel({ api, onResult, onError, onLoading, loading 
     reader.readAsDataURL(f);
   };
 
+  const onDrop = (e) => {
+    e.preventDefault();
+    const f = e.dataTransfer.files[0];
+    if (f) handleFile(f);
+  };
+
   const handleSubmit = async () => {
     if (!file) return;
     onLoading(true);
@@ -32,28 +38,38 @@ export default function ImageModel({ api, onResult, onError, onLoading, loading 
   return (
     <div className="model-form">
       <h2>🖼️ Image CNN</h2>
-      <p style={{color:'#64748b',fontSize:'0.875rem',marginTop:0}}>
-        Upload a handwritten digit image — recognized as 0 through 9
+      <p className="subtitle">
+        Upload any photo and the CIFAR-10 CNN will classify it into one of 10 categories:
+        airplane, automobile, bird, cat, deer, dog, frog, horse, ship, or truck.
+        SHAP DeepExplainer then highlights the exact pixels that drove the prediction.
       </p>
 
-      <div className="file-drop" onClick={() => ref.current?.click()}>
-        <input ref={ref} type="file" accept="image/*" style={{display:'none'}}
-          onChange={e => e.target.files[0] && handleFile(e.target.files[0])} />
-        <p style={{fontSize:'2rem',margin:0}}>📁</p>
-        <p>Click to upload image</p>
-        <p style={{fontSize:'0.75rem'}}>PNG, JPG, GIF</p>
+      <div
+        className="file-drop"
+        onClick={() => ref.current?.click()}
+        onDragOver={e => e.preventDefault()}
+        onDrop={onDrop}
+      >
+        <input
+          ref={ref} type="file" accept="image/*" style={{ display: 'none' }}
+          onChange={e => e.target.files[0] && handleFile(e.target.files[0])}
+        />
+        <span className="drop-icon">📁</span>
+        <p>{file ? file.name : 'Click or drag & drop an image'}</p>
+        <small>PNG, JPG, GIF — resized to 32×32 RGB for the CNN</small>
       </div>
 
-      {preview && <img src={preview} alt="preview" className="preview-img" />}
+      {preview && (
+        <img src={preview} alt="preview" className="preview-img" />
+      )}
 
-      <button className="btn-primary" onClick={handleSubmit}
-        disabled={!file || loading}>
-        {loading ? 'Analyzing...' : 'Predict & Explain'}
+      <button className="btn-primary" onClick={handleSubmit} disabled={!file || loading}>
+        {loading ? 'Analyzing…' : 'Predict & Explain'}
       </button>
 
-      <div style={{marginTop:'1rem',fontSize:'0.8rem',color:'#64748b'}}>
-        <strong>Classes:</strong> Digits 0, 1, 2, 3, 4, 5, 6, 7, 8, 9
-        <br/><strong>Tip:</strong> Draw a digit on paper, take a photo, or use any MNIST-style image
+      <div className="info-note">
+        <strong>Tip:</strong> Use a clear photo of an airplane, car, animal, or other CIFAR-10 object.
+        The model was trained on 50,000 color images across 10 object classes.
       </div>
     </div>
   );

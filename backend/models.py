@@ -1,25 +1,26 @@
 """
 models.py — 4 Deep Learning Models for 4 Input Types
 
-Model 1: Image CNN    — MNIST digit recognition (28x28 grayscale)
-Model 2: Text DNN     — IMDB sentiment analysis (bag-of-words)
-Model 3: Tabular DNN  — Iris flower classification (4 features)
-Model 4: Audio 1D-CNN — Synthetic signal classification (sine/square/noise)
+Actual saved model formats (do NOT change without retraining):
+  Image  : CIFAR-10 CNN   — input (32,32,3) RGB, 10 classes
+  Text   : Bidirectional LSTM — input (200,) int32 word-IDs, 2 classes
+  Tabular: Iris DNN       — input (4,) standardized, 3 classes
+  Audio  : 1D-CNN         — input (1000,1) waveform, 3 classes
 """
 
 import os
 import tensorflow as tf
 from tensorflow.keras import layers, models
 
-# Always save/load models relative to this file's directory (backend/)
 _DIR = os.path.dirname(os.path.abspath(__file__))
 
-NUM_MNIST  = 10
-NUM_IMDB   = 2
-NUM_IRIS   = 3
-NUM_AUDIO  = 3
-VOCAB_SIZE = 10000
-AUDIO_LEN  = 500
+NUM_CIFAR10 = 10
+NUM_IMDB    = 2
+NUM_IRIS    = 3
+NUM_AUDIO   = 3
+VOCAB_SIZE  = 10000
+SEQUENCE_LEN= 200
+AUDIO_LEN   = 1000
 
 
 def build_image_cnn():
@@ -119,29 +120,31 @@ MODEL_SAVE_PATHS = {
 
 MODEL_INFO = {
     'image': {
-        'name': 'Image CNN', 'input_type': 'Image (Grayscale)',
-        'dataset': 'MNIST', 'task': 'Handwritten Digit Recognition (0–9)',
-        'architecture': 'Conv2D×2 → Pool → Conv2D×2 → Pool → Dense(256) → Softmax',
-        'input_desc': 'Upload a handwritten digit image (0–9)',
+        'name': 'Image CNN', 'input_type': 'Image (RGB)',
+        'dataset': 'CIFAR-10', 'task': 'Object Recognition (10 classes)',
+        'architecture': 'Conv2D(64)×2 → Pool → Conv2D(128)×2 → Pool → Conv2D(256) → Dense(512) → Softmax',
+        'input_desc': 'Upload any photo — airplane, car, animal, ship, truck, etc.',
         'theory': (
-            'A Convolutional Neural Network (CNN) uses learnable filters that slide over '
-            'the image to detect local patterns like edges, curves, and strokes. '
-            'Early layers detect simple features (edges), deeper layers detect complex '
-            'shapes (loops in 8, vertical stroke in 1). MaxPooling reduces spatial size '
-            'while keeping important features. BatchNormalization stabilizes training.'
+            'A Convolutional Neural Network (CNN) applies learnable 3×3 filters across a '
+            '32×32 RGB image to detect spatial features. Early layers detect color edges and '
+            'textures; deeper layers learn complex object parts (wings, wheels, fur). '
+            'Three convolutional blocks progressively grow from 64→128→256 channels. '
+            'BatchNormalization stabilizes gradient flow, Dropout prevents overfitting on '
+            'CIFAR-10\'s 50,000 training images across 10 object categories.'
         )
     },
     'text': {
-        'name': 'Text DNN', 'input_type': 'Text',
+        'name': 'Text LSTM', 'input_type': 'Text',
         'dataset': 'IMDB Movie Reviews', 'task': 'Sentiment Analysis (Positive / Negative)',
-        'architecture': 'BoW Vector → Dense(256) → Dense(128) → Dense(64) → Softmax',
-        'input_desc': 'Type any movie review or sentence',
+        'architecture': 'Embedding(10000,64) → BiLSTM(128) → BiLSTM(64) → Dense(64) → Softmax',
+        'input_desc': 'Type any movie review or short opinion text',
         'theory': (
-            'Bag-of-Words (BoW) converts text into a fixed-size vector where each position '
-            'represents a word from the vocabulary. If the word appears in the text, that '
-            'position is 1, otherwise 0. The Dense Neural Network then learns which word '
-            'combinations indicate positive or negative sentiment. L2 regularization '
-            'prevents overfitting on the 50,000 IMDB reviews.'
+            'A Bidirectional LSTM processes text as a sequence of up to 200 word IDs. '
+            'The Embedding layer maps each word to a learned 64-dimensional vector in semantic '
+            'space (similar words cluster together). The two BiLSTM layers read the sequence '
+            'both left-to-right and right-to-left simultaneously, capturing long-range context '
+            'that a simple word-count model would miss (e.g., "not bad" vs "not good"). '
+            'Trained on 25,000 IMDB reviews, it achieves ~87% sentiment accuracy.'
         )
     },
     'tabular': {
