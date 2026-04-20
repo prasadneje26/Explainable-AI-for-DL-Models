@@ -1,212 +1,192 @@
 """
-models.py — 4 Deep Learning Models for 4 Different Input Types
+models.py — 4 Deep Learning Models for 4 Input Types
 
-Model 1: Image CNN        — CIFAR-10 image classification (32x32 RGB)
-Model 2: Text LSTM        — IMDB sentiment analysis (text sequences)
-Model 3: Tabular DNN      — Iris flower classification (structured data)
-Model 4: Audio 1D-CNN     — Synthetic audio signal classification (1D waveform)
+Model 1: Image CNN    — MNIST digit recognition (28x28 grayscale)
+Model 2: Text DNN     — IMDB sentiment analysis (bag-of-words)
+Model 3: Tabular DNN  — Iris flower classification (4 features)
+Model 4: Audio 1D-CNN — Synthetic signal classification (sine/square/noise)
 """
 
 import os
-import numpy as np
 import tensorflow as tf
-from tensorflow.keras import layers, models, Model
+from tensorflow.keras import layers, models
 
-NUM_CLASSES_IMAGE   = 10   # CIFAR-10
-NUM_CLASSES_TEXT    = 2    # Positive / Negative
-NUM_CLASSES_TABULAR = 3    # Iris: setosa, versicolor, virginica
-NUM_CLASSES_AUDIO   = 3    # 3 synthetic signal types
+# Always save/load models relative to this file's directory (backend/)
+_DIR = os.path.dirname(os.path.abspath(__file__))
 
-VOCAB_SIZE    = 10000
-MAX_SEQ_LEN   = 200
-EMBED_DIM     = 64
-AUDIO_LEN     = 1000  # 1000 time steps per signal
+NUM_MNIST  = 10
+NUM_IMDB   = 2
+NUM_IRIS   = 3
+NUM_AUDIO  = 3
+VOCAB_SIZE = 10000
+AUDIO_LEN  = 500
 
 
-# ── Model 1: Image CNN (CIFAR-10) ─────────────────────────────────────────────
-
-def build_image_cnn(input_shape=(32, 32, 3), num_classes=NUM_CLASSES_IMAGE):
+def build_image_cnn():
     """
-    Custom CNN for image classification on CIFAR-10.
-    Input: (32, 32, 3) RGB image normalized to [0,1]
-    Output: 10-class softmax (airplane, car, bird, cat, deer, dog, frog, horse, ship, truck)
+    CNN for MNIST — 3 conv blocks with BatchNorm for stable training.
+    Input : (28,28,1) grayscale [0,1]
+    Output: 10-class softmax
+    Target: ~99.5% accuracy
     """
-    model = models.Sequential([
-        layers.Conv2D(64, (3,3), padding='same', input_shape=input_shape),
-        layers.BatchNormalization(), layers.Activation('relu'),
-        layers.Conv2D(64, (3,3), padding='same'),
-        layers.BatchNormalization(), layers.Activation('relu'),
-        layers.MaxPooling2D(2,2), layers.Dropout(0.3),
+    return models.Sequential([
+        layers.Input(shape=(28, 28, 1)),
 
-        layers.Conv2D(128, (3,3), padding='same'),
-        layers.BatchNormalization(), layers.Activation('relu'),
-        layers.Conv2D(128, (3,3), padding='same'),
-        layers.BatchNormalization(), layers.Activation('relu'),
-        layers.MaxPooling2D(2,2), layers.Dropout(0.3),
+        layers.Conv2D(32, 3, padding='same'), layers.BatchNormalization(), layers.Activation('relu'),
+        layers.Conv2D(32, 3, padding='same'), layers.BatchNormalization(), layers.Activation('relu'),
+        layers.MaxPooling2D(2), layers.Dropout(0.25),
 
-        layers.Conv2D(256, (3,3), padding='same'),
-        layers.BatchNormalization(), layers.Activation('relu'),
-        layers.MaxPooling2D(2,2), layers.Dropout(0.4),
+        layers.Conv2D(64, 3, padding='same'), layers.BatchNormalization(), layers.Activation('relu'),
+        layers.Conv2D(64, 3, padding='same'), layers.BatchNormalization(), layers.Activation('relu'),
+        layers.MaxPooling2D(2), layers.Dropout(0.25),
 
         layers.Flatten(),
-        layers.Dense(512, activation='relu'),
-        layers.BatchNormalization(), layers.Dropout(0.5),
-        layers.Dense(num_classes, activation='softmax')
-    ], name='ImageCNN')
-    return model
+        layers.Dense(256, activation='relu'), layers.BatchNormalization(), layers.Dropout(0.4),
+        layers.Dense(NUM_MNIST, activation='softmax')
+    ], name='ImageCNN_MNIST')
 
 
-# ── Model 2: Text LSTM (IMDB Sentiment) ──────────────────────────────────────
-
-def build_text_lstm(vocab_size=VOCAB_SIZE, max_len=MAX_SEQ_LEN,
-                    embed_dim=EMBED_DIM, num_classes=NUM_CLASSES_TEXT):
+def build_text_dnn():
     """
-    Bidirectional LSTM for text sentiment analysis on IMDB dataset.
-    Input: integer sequence of word indices, length MAX_SEQ_LEN
-    Output: 2-class softmax (Negative=0, Positive=1)
-
-    Architecture:
-      Embedding → BiLSTM → BiLSTM → Dense → Softmax
+    DNN for IMDB sentiment — wider layers + L2 regularization.
+    Input : (VOCAB_SIZE,) multi-hot bag-of-words
+    Output: 2-class softmax (Negative / Positive)
+    Target: ~90% accuracy
     """
-    model = models.Sequential([
-        layers.Embedding(vocab_size, embed_dim, input_length=max_len),
-        layers.Bidirectional(layers.LSTM(64, return_sequences=True, dropout=0.3)),
-        layers.Bidirectional(layers.LSTM(32, dropout=0.3)),
-        layers.Dense(64, activation='relu'),
+    reg = tf.keras.regularizers.l2(1e-4)
+    return models.Sequential([
+        layers.Input(shape=(VOCAB_SIZE,)),
+        layers.Dense(256, activation='relu', kernel_regularizer=reg),
+        layers.Dropout(0.5),
+        layers.Dense(128, activation='relu', kernel_regularizer=reg),
         layers.Dropout(0.4),
-        layers.Dense(num_classes, activation='softmax')
-    ], name='TextLSTM')
-    return model
+        layers.Dense(64,  activation='relu', kernel_regularizer=reg),
+        layers.Dropout(0.3),
+        layers.Dense(NUM_IMDB, activation='softmax')
+    ], name='TextDNN_IMDB')
 
 
-# ── Model 3: Tabular DNN (Iris) ───────────────────────────────────────────────
-
-def build_tabular_dnn(input_dim=4, num_classes=NUM_CLASSES_TABULAR):
+def build_tabular_dnn():
     """
-    Optimum Network for tabular/structured data classification on Iris dataset.
-    Input: 4 numerical features (sepal length, sepal width, petal length, petal width)
-    Output: 3-class softmax (setosa, versicolor, virginica)
+    DNN for Iris — deep enough to learn non-linear boundaries.
+    Input : (4,) standardized features
+    Output: 3-class softmax
+    Target: ~100% accuracy
     """
-    model = models.Sequential([
-        layers.Dense(64, activation='relu', input_shape=(input_dim,)),
-        layers.Dense(32, activation='relu'),
-        layers.Dense(16, activation='relu'),
-        layers.Dense(num_classes, activation='softmax')
-    ], name='TabularDNN')
-    return model
+    return models.Sequential([
+        layers.Input(shape=(4,)),
+        layers.Dense(128, activation='relu'), layers.BatchNormalization(), layers.Dropout(0.3),
+        layers.Dense(64,  activation='relu'), layers.BatchNormalization(), layers.Dropout(0.2),
+        layers.Dense(32,  activation='relu'),
+        layers.Dense(NUM_IRIS, activation='softmax')
+    ], name='TabularDNN_Iris')
 
 
-# ── Model 4: Audio 1D-CNN (Signal Classification) ────────────────────────────
-
-def build_audio_cnn(input_len=AUDIO_LEN, num_classes=NUM_CLASSES_AUDIO):
+def build_audio_cnn():
     """
-    1D CNN for audio/signal classification.
-    Input: 1D waveform of length AUDIO_LEN (1000 time steps)
-    Output: 3-class softmax (Sine Wave, Square Wave, Noise)
+    1D-CNN for signal classification — 3 conv blocks + GAP.
+    Input : (AUDIO_LEN, 1) normalized waveform
+    Output: 3-class softmax (Sine / Square / Noise)
+    Target: ~100% accuracy
     """
-    inp = layers.Input(shape=(input_len, 1))
+    return models.Sequential([
+        layers.Input(shape=(AUDIO_LEN, 1)),
+        layers.Conv1D(32, 7, padding='same'), layers.BatchNormalization(), layers.Activation('relu'),
+        layers.MaxPooling1D(4), layers.Dropout(0.2),
 
-    x = layers.Conv1D(64, 7, activation='relu', padding='same')(inp)
-    x = layers.BatchNormalization()(x)
-    x = layers.MaxPooling1D(4)(x)
-    x = layers.Dropout(0.2)(x)
+        layers.Conv1D(64, 5, padding='same'), layers.BatchNormalization(), layers.Activation('relu'),
+        layers.MaxPooling1D(4), layers.Dropout(0.2),
 
-    x = layers.Conv1D(128, 5, activation='relu', padding='same')(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.MaxPooling1D(4)(x)
-    x = layers.Dropout(0.2)(x)
+        layers.Conv1D(128, 3, padding='same'), layers.BatchNormalization(), layers.Activation('relu'),
+        layers.GlobalAveragePooling1D(),
 
-    x = layers.Conv1D(256, 3, activation='relu', padding='same')(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.MaxPooling1D(4)(x)
-    x = layers.Dropout(0.2)(x)
+        layers.Dense(64, activation='relu'), layers.Dropout(0.3),
+        layers.Dense(NUM_AUDIO, activation='softmax')
+    ], name='AudioCNN_Signals')
 
-    x = layers.Conv1D(256, 3, activation='relu', padding='same')(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.GlobalAveragePooling1D()(x)
-
-    x = layers.Dense(256, activation='relu')(x)
-    x = layers.Dropout(0.4)(x)
-    x = layers.Dense(128, activation='relu')(x)
-    x = layers.Dropout(0.3)(x)
-    out = layers.Dense(num_classes, activation='softmax')(x)
-
-    return Model(inputs=inp, outputs=out, name='AudioCNN')
-
-
-# ── Registry ──────────────────────────────────────────────────────────────────
 
 MODEL_BUILDERS = {
-    'image':    build_image_cnn,
-    'text':     build_text_lstm,
-    'tabular':  build_tabular_dnn,
-    'audio':    build_audio_cnn,
+    'image': build_image_cnn, 'text': build_text_dnn,
+    'tabular': build_tabular_dnn, 'audio': build_audio_cnn,
 }
 
 MODEL_SAVE_PATHS = {
-    'image':    'saved_image.keras',
-    'text':     'saved_text.keras',
-    'tabular':  'saved_tabular.keras',
-    'audio':    'saved_audio.keras',
+    'image':   os.path.join(_DIR, 'saved_image.keras'),
+    'text':    os.path.join(_DIR, 'saved_text.keras'),
+    'tabular': os.path.join(_DIR, 'saved_tabular.keras'),
+    'audio':   os.path.join(_DIR, 'saved_audio.keras'),
 }
 
 MODEL_INFO = {
     'image': {
-        'name': 'Image CNN',
-        'input_type': 'Image',
-        'dataset': 'CIFAR-10',
-        'task': 'Image Classification',
-        'input_desc': 'Upload any image (airplane, car, bird, cat, deer, dog, frog, horse, ship, truck)',
-        'architecture': 'Custom CNN with BatchNorm + Dropout'
+        'name': 'Image CNN', 'input_type': 'Image (Grayscale)',
+        'dataset': 'MNIST', 'task': 'Handwritten Digit Recognition (0–9)',
+        'architecture': 'Conv2D×2 → Pool → Conv2D×2 → Pool → Dense(256) → Softmax',
+        'input_desc': 'Upload a handwritten digit image (0–9)',
+        'theory': (
+            'A Convolutional Neural Network (CNN) uses learnable filters that slide over '
+            'the image to detect local patterns like edges, curves, and strokes. '
+            'Early layers detect simple features (edges), deeper layers detect complex '
+            'shapes (loops in 8, vertical stroke in 1). MaxPooling reduces spatial size '
+            'while keeping important features. BatchNormalization stabilizes training.'
+        )
     },
     'text': {
-        'name': 'Text LSTM',
-        'input_type': 'Text',
-        'dataset': 'IMDB Reviews',
-        'task': 'Sentiment Analysis',
-        'input_desc': 'Enter a movie review or any text to classify as Positive or Negative',
-        'architecture': 'Bidirectional LSTM with Embedding layer'
+        'name': 'Text DNN', 'input_type': 'Text',
+        'dataset': 'IMDB Movie Reviews', 'task': 'Sentiment Analysis (Positive / Negative)',
+        'architecture': 'BoW Vector → Dense(256) → Dense(128) → Dense(64) → Softmax',
+        'input_desc': 'Type any movie review or sentence',
+        'theory': (
+            'Bag-of-Words (BoW) converts text into a fixed-size vector where each position '
+            'represents a word from the vocabulary. If the word appears in the text, that '
+            'position is 1, otherwise 0. The Dense Neural Network then learns which word '
+            'combinations indicate positive or negative sentiment. L2 regularization '
+            'prevents overfitting on the 50,000 IMDB reviews.'
+        )
     },
     'tabular': {
-        'name': 'Tabular DNN',
-        'input_type': 'Tabular / Structured',
-        'dataset': 'Iris Dataset',
-        'task': 'Flower Species Classification',
-        'input_desc': 'Enter 4 measurements: sepal length, sepal width, petal length, petal width (in cm)',
-        'architecture': 'Deep Neural Network with BatchNorm'
+        'name': 'Tabular DNN', 'input_type': 'Tabular / Structured Data',
+        'dataset': 'Iris Flower Dataset', 'task': 'Flower Species Classification',
+        'architecture': 'Dense(128) → BN → Dense(64) → BN → Dense(32) → Softmax',
+        'input_desc': 'Enter 4 flower measurements in cm',
+        'theory': (
+            'A Deep Neural Network for tabular data learns non-linear decision boundaries '
+            'between classes. The 4 Iris features (sepal/petal length/width) are '
+            'standardized using StandardScaler so all features contribute equally. '
+            'BatchNormalization after each layer ensures stable gradient flow. '
+            'The model learns that petal measurements are the most discriminative features.'
+        )
     },
     'audio': {
-        'name': 'Audio 1D-CNN',
-        'input_type': 'Audio / Signal',
-        'dataset': 'Synthetic Signals',
-        'task': 'Signal Type Classification',
-        'input_desc': 'Upload a .npy signal file or use the test generator',
-        'architecture': '1D CNN with GlobalAveragePooling'
+        'name': 'Audio 1D-CNN', 'input_type': 'Audio / Signal (1D Waveform)',
+        'dataset': 'Synthetic Signals', 'task': 'Signal Type Classification',
+        'architecture': 'Conv1D(32) → Conv1D(64) → Conv1D(128) → GAP → Dense → Softmax',
+        'input_desc': 'Generate a test signal or upload a .npy file',
+        'theory': (
+            'A 1D-CNN applies convolutional filters along the time axis of a signal. '
+            'It learns to detect temporal patterns: smooth periodicity (sine), '
+            'abrupt transitions (square), or random fluctuations (noise). '
+            'GlobalAveragePooling aggregates features across all time steps into a '
+            'single vector, making the model robust to signal length variations.'
+        )
     }
 }
 
 
-def get_model(model_type: str):
-    t = model_type.lower()
+def get_model(t: str):
+    t = t.lower()
     if t not in MODEL_BUILDERS:
-        raise ValueError(f"Unknown model type '{t}'. Choose from: {list(MODEL_BUILDERS.keys())}")
+        raise ValueError(f"Unknown model '{t}'")
     return MODEL_BUILDERS[t]()
 
 
-def save_model(model, model_type: str):
-    path = MODEL_SAVE_PATHS[model_type.lower()]
-    model.save(path)
-    print(f"[OK] Saved: {path}")
-
-
-def load_model_for(model_type: str):
-    """Load trained model or return fresh model with random weights."""
-    t = model_type.lower()
+def load_model_for(t: str):
+    t = t.lower()
     path = MODEL_SAVE_PATHS.get(t)
     if path and os.path.exists(path):
         m = tf.keras.models.load_model(path)
-        print(f"[OK] Loaded trained model: {path}")
+        print(f"[OK] Loaded: {path}")
     else:
         m = get_model(t)
-        print(f"[WARN] No saved weights for '{t}' — using untrained model")
+        print(f"[WARN] No saved weights for '{t}'")
     return m

@@ -1,43 +1,37 @@
 """
-data.py — Data loading and preprocessing for all 4 input types.
+data.py — Data loading and preprocessing for all 4 models.
 
-Model 1 (Image):   CIFAR-10 — 32x32 RGB images
-Model 2 (Text):    IMDB     — movie review sequences
-Model 3 (Tabular): Iris     — 4 numerical features
+Model 1 (Image):   MNIST — 28x28 grayscale digits
+Model 2 (Text):    IMDB  — bag-of-words multi-hot vectors
+Model 3 (Tabular): Iris  — 4 numerical features
 Model 4 (Audio):   Synthetic signals — sine, square, noise
 """
 
 import numpy as np
 from PIL import Image
 import tensorflow as tf
-from tensorflow.keras.datasets import cifar10, imdb
-from tensorflow.keras.preprocessing.sequence import pad_sequences
 from sklearn.datasets import load_iris
-from sklearn.preprocessing import StandardScaler, LabelEncoder
-import joblib
-import os
+from sklearn.preprocessing import StandardScaler
+import joblib, os
 
 # ── Labels ────────────────────────────────────────────────────────────────────
 
-CIFAR10_CLASSES  = ('airplane','automobile','bird','cat','deer',
-                    'dog','frog','horse','ship','truck')
-SENTIMENT_LABELS = ('Negative', 'Positive')
-IRIS_CLASSES     = ('setosa', 'versicolor', 'virginica')
-AUDIO_CLASSES    = ('Sine Wave', 'Square Wave', 'Noise')
+MNIST_CLASSES    = [str(i) for i in range(10)]
+SENTIMENT_LABELS = ['Negative', 'Positive']
+IRIS_CLASSES     = ['setosa', 'versicolor', 'virginica']
+AUDIO_CLASSES    = ['Sine Wave', 'Square Wave', 'Noise']
 
 VOCAB_SIZE  = 10000
-MAX_SEQ_LEN = 200
-AUDIO_LEN   = 1000
-
-SCALER_PATH = 'iris_scaler.pkl'
+AUDIO_LEN   = 500
+SCALER_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'iris_scaler.pkl')
 
 
-# ── Model 1: Image ────────────────────────────────────────────────────────────
+# ── Model 1: MNIST ────────────────────────────────────────────────────────────
 
-def load_cifar10_data():
-    (x_tr, y_tr), (x_te, y_te) = cifar10.load_data()
-    x_tr = x_tr.astype(np.float32) / 255.0
-    x_te = x_te.astype(np.float32) / 255.0
+def load_mnist():
+    (x_tr, y_tr), (x_te, y_te) = tf.keras.datasets.mnist.load_data()
+    x_tr = x_tr.astype(np.float32)[..., np.newaxis] / 255.0   # (60000,28,28,1)
+    x_te = x_te.astype(np.float32)[..., np.newaxis] / 255.0
     y_tr = tf.keras.utils.to_categorical(y_tr, 10)
     y_te = tf.keras.utils.to_categorical(y_te, 10)
     return (x_tr, y_tr), (x_te, y_te)
@@ -45,33 +39,40 @@ def load_cifar10_data():
 
 def preprocess_image(image_input) -> np.ndarray:
     """
-    Preprocess an uploaded image for the Image CNN.
-    Returns (1, 32, 32, 3) float32 array normalized to [0,1].
+    Convert uploaded image → (1, 28, 28, 1) float32 [0,1].
+    Converts to grayscale and resizes to 28x28.
     """
     if isinstance(image_input, np.ndarray):
-        pil = Image.fromarray(image_input.astype(np.uint8)).convert('RGB')
+        pil = Image.fromarray(image_input.astype(np.uint8))
     else:
-        pil = image_input.convert('RGB')
-    # Use anti-aliasing (LANCZOS) to prevent high-res images from turning into jagged geometric shapes
-    pil = pil.resize((32, 32), Image.Resampling.LANCZOS)
+        pil = image_input
+    pil = pil.convert('L').resize((28, 28))          # grayscale 28x28
     arr = np.array(pil, dtype=np.float32) / 255.0
-    return np.expand_dims(arr, 0)
+    return arr.reshape(1, 28, 28, 1)
 
 
-def get_image_background(n=50) -> np.ndarray:
-    """Background samples for SHAP (image model)."""
-    (_, _), (x_te, _) = cifar10.load_data()
+def get_image_background(n=100) -> np.ndarray:
+    (_, _), (x_te, _) = load_mnist()
     idx = np.random.choice(len(x_te), n, replace=False)
-    bg = x_te[idx].astype(np.float32) / 255.0
-    return bg
+    return x_te[idx]
 
 
-# ── Model 2: Text ─────────────────────────────────────────────────────────────
+# ── Model 2: IMDB Bag-of-Words ────────────────────────────────────────────────
 
-def load_imdb_data():
-    (x_tr, y_tr), (x_te, y_te) = imdb.load_data(num_words=VOCAB_SIZE)
-    x_tr = pad_sequences(x_tr, maxlen=MAX_SEQ_LEN, padding='post', truncating='post')
-    x_te = pad_sequences(x_te, maxlen=MAX_SEQ_LEN, padding='post', truncating='post')
+def load_imdb_bow():
+    """Load IMDB as multi-hot bag-of-words vectors."""
+    (x_tr, y_tr), (x_te, y_te) = tf.keras.datasets.imdb.load_data(num_words=VOCAB_SIZE)
+
+    def to_bow(sequences, dim=VOCAB_SIZE):
+        out = np.zeros((len(sequences), dim), dtype=np.float32)
+        for i, seq in enumerate(sequences):
+            for idx in seq:
+                if idx < dim:
+                    out[i, idx] = 1.0
+        return out
+
+    x_tr = to_bow(x_tr)
+    x_te = to_bow(x_te)
     y_tr = tf.keras.utils.to_categorical(y_tr, 2)
     y_te = tf.keras.utils.to_categorical(y_te, 2)
     return (x_tr, y_tr), (x_te, y_te)
@@ -79,81 +80,63 @@ def load_imdb_data():
 
 def preprocess_text(text: str) -> np.ndarray:
     """
-    Convert raw text to padded integer sequence for the Text LSTM.
-    Returns (1, MAX_SEQ_LEN) int32 array.
+    Convert raw text → (1, VOCAB_SIZE) multi-hot float32 vector.
+    Each position = 1 if that word appears in the text.
     """
-    word_index = imdb.get_word_index()
-    # IMDB word index is offset by 3 (reserved tokens)
-    tokens = []
+    word_index = tf.keras.datasets.imdb.get_word_index()
+    vec = np.zeros((1, VOCAB_SIZE), dtype=np.float32)
     for word in text.lower().split():
-        idx = word_index.get(word, 2)  # 2 = unknown
-        if idx < VOCAB_SIZE:
-            tokens.append(idx + 3)
-        else:
-            tokens.append(2)
-    seq = pad_sequences([tokens], maxlen=MAX_SEQ_LEN, padding='post', truncating='post')
-    return seq.astype(np.int32)
+        idx = word_index.get(word)
+        if idx is not None and idx < VOCAB_SIZE:
+            vec[0, idx] = 1.0
+    return vec
 
 
-def get_text_background(n=50) -> np.ndarray:
-    """Background samples for SHAP (text model)."""
-    (_, _), (x_te, _) = imdb.load_data(num_words=VOCAB_SIZE)
+def get_text_background(n=100) -> np.ndarray:
+    (_, _), (x_te, _) = load_imdb_bow()
     idx = np.random.choice(len(x_te), n, replace=False)
-    x_te_slice = pad_sequences(x_te[idx], maxlen=MAX_SEQ_LEN, padding='post', truncating='post')
-    return x_te_slice.astype(np.float32)
+    return x_te[idx]
 
 
-# ── Model 3: Tabular ──────────────────────────────────────────────────────────
+# ── Model 3: Iris ─────────────────────────────────────────────────────────────
 
 def load_iris_data():
     iris = load_iris()
     x = iris.data.astype(np.float32)
     y = tf.keras.utils.to_categorical(iris.target, 3)
-
-    # Fit and save scaler
     scaler = StandardScaler()
-    x_scaled = scaler.fit_transform(x).astype(np.float32)
+    x = scaler.fit_transform(x).astype(np.float32)
     joblib.dump(scaler, SCALER_PATH)
-
-    # 80/20 split
-    n = len(x_scaled)
+    n = len(x)
+    idx = np.random.RandomState(42).permutation(n)
     split = int(n * 0.8)
-    idx = np.random.permutation(n)
-    return (x_scaled[idx[:split]], y[idx[:split]]), (x_scaled[idx[split:]], y[idx[split:]])
+    return (x[idx[:split]], y[idx[:split]]), (x[idx[split:]], y[idx[split:]])
 
 
 def preprocess_tabular(features: list) -> np.ndarray:
-    """
-    Preprocess 4 Iris features for the Tabular DNN.
-    features: [sepal_length, sepal_width, petal_length, petal_width]
-    Returns (1, 4) float32 array (StandardScaler normalized).
-    """
     arr = np.array(features, dtype=np.float32).reshape(1, -1)
     if os.path.exists(SCALER_PATH):
-        scaler = joblib.load(SCALER_PATH)
-        arr = scaler.transform(arr).astype(np.float32)
+        arr = joblib.load(SCALER_PATH).transform(arr).astype(np.float32)
     return arr
 
 
 def get_tabular_background(n=50) -> np.ndarray:
-    """Background samples for SHAP (tabular model)."""
     iris = load_iris()
     x = iris.data.astype(np.float32)
     if os.path.exists(SCALER_PATH):
-        scaler = joblib.load(SCALER_PATH)
-        x = scaler.transform(x).astype(np.float32)
+        x = joblib.load(SCALER_PATH).transform(x).astype(np.float32)
     idx = np.random.choice(len(x), min(n, len(x)), replace=False)
     return x[idx]
 
 
-# ── Model 4: Audio ────────────────────────────────────────────────────────────
+# ── Model 4: Synthetic Audio Signals ─────────────────────────────────────────
 
-def generate_audio_dataset(n_per_class=1000, length=AUDIO_LEN, seed=42):
+def generate_audio_dataset(n_per_class=800, length=AUDIO_LEN, seed=42):
     """
-    Generate synthetic audio signals for 3 clearly distinct classes:
-      0 = Sine wave  — smooth periodic signal
-      1 = Square wave — abrupt transitions between +1 and -1
-      2 = Noise       — random Gaussian signal (no periodicity)
+    3 clearly distinct signal classes:
+      0 = Sine wave   — smooth periodic
+      1 = Square wave — abrupt +1/-1 transitions
+      2 = Noise       — random Gaussian
     """
     np.random.seed(seed)
     x, y = [], []
@@ -161,28 +144,22 @@ def generate_audio_dataset(n_per_class=1000, length=AUDIO_LEN, seed=42):
 
     for _ in range(n_per_class):
         freq = np.random.uniform(3, 15)
-        # Pure sine — very small noise so class is distinguishable
-        sig = np.sin(freq * t) + np.random.normal(0, 0.02, length)
+        sig  = np.sin(freq * t) + np.random.normal(0, 0.02, length)
         x.append(sig.astype(np.float32)); y.append(0)
 
     for _ in range(n_per_class):
         freq = np.random.uniform(3, 15)
-        # Square wave — sign of sine, very distinct shape
-        sig = np.sign(np.sin(freq * t)) + np.random.normal(0, 0.02, length)
+        sig  = np.sign(np.sin(freq * t)) + np.random.normal(0, 0.02, length)
         x.append(sig.astype(np.float32)); y.append(1)
 
     for _ in range(n_per_class):
-        # Pure Gaussian noise — no structure
         sig = np.random.normal(0, 1, length).astype(np.float32)
         x.append(sig); y.append(2)
 
     x = np.array(x, dtype=np.float32)
-    y_cat = tf.keras.utils.to_categorical(y, 3)
-
-    # Normalize each signal to [-1, 1]
     mx = np.max(np.abs(x), axis=1, keepdims=True) + 1e-8
-    x = x / mx
-    x = x[..., np.newaxis]  # (N, AUDIO_LEN, 1)
+    x = (x / mx)[..., np.newaxis]                   # (N, AUDIO_LEN, 1)
+    y_cat = tf.keras.utils.to_categorical(y, 3)
 
     idx = np.random.permutation(len(x))
     split = int(len(x) * 0.8)
@@ -190,25 +167,17 @@ def generate_audio_dataset(n_per_class=1000, length=AUDIO_LEN, seed=42):
 
 
 def preprocess_audio(signal: np.ndarray) -> np.ndarray:
-    """
-    Preprocess a 1D signal array for the Audio CNN.
-    signal: 1D numpy array of any length → resampled to AUDIO_LEN
-    Returns (1, AUDIO_LEN, 1) float32 array.
-    """
-    # Resample to AUDIO_LEN using linear interpolation
+    """Resample to AUDIO_LEN, normalize, return (1, AUDIO_LEN, 1)."""
     if len(signal) != AUDIO_LEN:
-        x_old = np.linspace(0, 1, len(signal))
-        x_new = np.linspace(0, 1, AUDIO_LEN)
-        signal = np.interp(x_new, x_old, signal)
+        xo = np.linspace(0, 1, len(signal))
+        xn = np.linspace(0, 1, AUDIO_LEN)
+        signal = np.interp(xn, xo, signal)
     signal = signal.astype(np.float32)
-    # Normalize
-    mx = np.max(np.abs(signal)) + 1e-8
-    signal = signal / mx
+    signal /= (np.max(np.abs(signal)) + 1e-8)
     return signal.reshape(1, AUDIO_LEN, 1)
 
 
 def get_audio_background(n=50) -> np.ndarray:
-    """Background samples for SHAP (audio model)."""
     (_, _), (x_te, _) = generate_audio_dataset()
     idx = np.random.choice(len(x_te), min(n, len(x_te)), replace=False)
     return x_te[idx]

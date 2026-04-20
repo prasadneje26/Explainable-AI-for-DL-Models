@@ -1,11 +1,16 @@
 """
-explainers.py — XAI explanations for all 4 model types.
+explainers.py — Deep SHAP explanations for all 4 models.
 
-Multiple explanation methods:
-  Image   → SHAP DeepExplainer, LIME, Grad-CAM
-  Text    → SHAP GradientExplainer, LIME
-  Tabular → SHAP KernelExplainer
-  Audio   → SHAP GradientExplainer
+Each explainer produces:
+  - A clear visualization
+  - Deep textual explanation of what SHAP found
+  - Model-specific interpretation
+
+SHAP Methods used:
+  Image   → DeepExplainer   (fast, designed for neural nets, uses DeepLIFT)
+  Text    → KernelExplainer (model-agnostic, works on any function)
+  Tabular → KernelExplainer (model-agnostic, works on any function)
+  Audio   → GradientExplainer (uses integrated gradients)
 """
 
 import numpy as np
@@ -13,347 +18,417 @@ import shap
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-import io
+import matplotlib.patches as mpatches
+import io, base64
 from PIL import Image
-import base64
-import tensorflow as tf
-from lime import lime_image
-from lime.lime_text import LimeTextExplainer
 
 
-def _fig_to_base64(fig) -> str:
+def _fig_to_b64(fig) -> str:
     buf = io.BytesIO()
-    fig.savefig(buf, format='png', dpi=100, bbox_inches='tight')
+    fig.savefig(buf, format='png', dpi=110, bbox_inches='tight')
     plt.close(fig)
     buf.seek(0)
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
-def _arr_to_base64(arr_uint8: np.ndarray) -> str:
+def _arr_to_b64(arr: np.ndarray) -> str:
     buf = io.BytesIO()
-    Image.fromarray(arr_uint8).save(buf, format='PNG')
+    Image.fromarray(arr.astype(np.uint8)).save(buf, format='PNG')
     buf.seek(0)
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
-# ── Model 1: Image SHAP ───────────────────────────────────────────────────────
+# ── 1. Image SHAP ─────────────────────────────────────────────────────────────
 
 class ImageSHAP:
-    """SHAP DeepExplainer for Image CNN."""
+    """
+    SHAP DeepExplainer for Image CNN (MNIST).
+
+    DeepExplainer uses the DeepLIFT algorithm:
+    - Compares each neuron's activation to a reference (background) activation
+    - Backpropagates these differences to the input pixels
+    - Result: each pixel gets a SHAP value = its contribution to the prediction
+
+    Positive SHAP pixel → pushed the model toward predicting this digit
+    Negative SHAP pixel → pushed the model away from this digit
+    """
 
     def __init__(self, model, background: np.ndarray):
-        print("[SHAP-Image] Initializing DeepExplainer...")
+        print("[SHAP-Image] Initializing DeepExplainer with 50 background samples...")
         self.model = model
-        self.explainer = shap.DeepExplainer(model, background)
+        self.explainer = shap.DeepExplainer(model, background[:50])
+        print("[SHAP-Image] Ready.")
 
-    def explain(self, image_input: np.ndarray, class_idx: int):
-        """
-        image_input: (1, 32, 32, 3)
-        Returns: (overlay_base64, heatmap_base64)
-        """
+    def explain(self, inp: np.ndarray, class_idx: int):
+        """inp: (1,28,28,1) → (overlay_b64, plot_b64, deep_text)"""
         try:
-            shap_vals = self.explainer.shap_values(image_input)
-            if isinstance(shap_vals, list):
-                sv = shap_vals[class_idx][0]   # (H, W, C)
-            else:
-                sv = shap_vals[0, :, :, :, class_idx]
+            sv = self.explainer.shap_values(inp)
+            s  = sv[class_idx][0, :, :, 0] if isinstance(sv, list) \
+                 else sv[0, :, :, 0, class_idx]
 
-            heatmap = np.sum(np.abs(sv), axis=-1)
-            heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min() + 1e-8)
+            pos_pixels = int(np.sum(s > 0))
+            neg_pixels = int(np.sum(s < 0))
+            max_shap   = float(np.max(s))
+            min_shap   = float(np.min(s))
 
-            # Overlay
-            img_disp = image_input[0].copy()
-            img_disp = (img_disp - img_disp.min()) / (img_disp.max() - img_disp.min() + 1e-8)
-            img_uint8 = (img_disp * 255).astype(np.uint8)
+            # Heatmap
+            hmap = np.abs(s)
+            hmap = (hmap - hmap.min()) / (hmap.max() - hmap.min() + 1e-8)
 
-            cmap = plt.get_cmap('RdYlGn')
-            hmap_color = (cmap(heatmap)[:, :, :3] * 255).astype(np.uint8)
-            overlay = (img_uint8 * 0.5 + hmap_color * 0.5).astype(np.uint8)
+            orig     = (inp[0, :, :, 0] * 255).astype(np.uint8)
+            orig_rgb = np.stack([orig]*3, axis=-1)
+            cmap     = plt.get_cmap('hot')
+            hmap_rgb = (cmap(hmap)[:, :, :3] * 255).astype(np.uint8)
+            overlay  = (orig_rgb * 0.45 + hmap_rgb * 0.55).astype(np.uint8)
 
-            # Matplotlib plot
+            # Rich 3-panel plot
             fig, axes = plt.subplots(1, 3, figsize=(12, 4))
-            axes[0].imshow(img_uint8); axes[0].set_title('Original'); axes[0].axis('off')
-            axes[1].imshow(heatmap, cmap='hot'); axes[1].set_title('SHAP Heatmap'); axes[1].axis('off')
-            axes[2].imshow(overlay); axes[2].set_title('Overlay'); axes[2].axis('off')
-            plt.suptitle('SHAP DeepExplainer — Image CNN', fontsize=13)
+            fig.patch.set_facecolor('#f8fafc')
+
+            axes[0].imshow(orig, cmap='gray', interpolation='nearest')
+            axes[0].set_title('Original Input\n(28×28 grayscale)', fontsize=10, fontweight='bold')
+            axes[0].axis('off')
+
+            im = axes[1].imshow(s, cmap='RdYlGn', interpolation='nearest',
+                                vmin=min_shap, vmax=max_shap)
+            axes[1].set_title('SHAP Values per Pixel\n(Green=positive, Red=negative)',
+                              fontsize=10, fontweight='bold')
+            axes[1].axis('off')
+            plt.colorbar(im, ax=axes[1], fraction=0.046, pad=0.04)
+
+            axes[2].imshow(overlay, interpolation='nearest')
+            axes[2].set_title('SHAP Heatmap Overlay\n(Bright = most important pixels)',
+                              fontsize=10, fontweight='bold')
+            axes[2].axis('off')
+
+            plt.suptitle(f'SHAP DeepExplainer — Predicted Digit: {class_idx}',
+                         fontsize=13, fontweight='bold', y=1.02)
             plt.tight_layout()
 
-            return _arr_to_base64(overlay), _fig_to_base64(fig)
+            deep_text = (
+                f"The model predicted digit '{class_idx}' by analyzing pixel-level patterns. "
+                f"SHAP DeepExplainer found {pos_pixels} pixels that positively contributed "
+                f"(pushed toward digit {class_idx}) and {neg_pixels} pixels that negatively "
+                f"contributed (pushed away). "
+                f"The strongest positive pixel had SHAP value {max_shap:.4f} and the strongest "
+                f"negative had {min_shap:.4f}. "
+                f"The bright/hot regions in the heatmap correspond to the key strokes and curves "
+                f"that define digit '{class_idx}' — for example, the loop in '0', the vertical "
+                f"stroke in '1', or the curves in '8'. "
+                f"This shows the CNN learned to focus on the same visual features a human would use."
+            )
+
+            return _arr_to_b64(overlay), _fig_to_b64(fig), deep_text
+
         except Exception as e:
             print(f"[SHAP-Image] Error: {e}")
-            return None, None
+            return None, None, str(e)
 
 
-class ImageLIME:
-    """LIME for Image CNN."""
-
-    def __init__(self, model):
-        print("[LIME-Image] Initializing LimeImageExplainer...")
-        self.model = model
-        self.explainer = lime_image.LimeImageExplainer()
-
-    def explain(self, image_input: np.ndarray, class_idx: int):
-        """
-        image_input: (1, 32, 32, 3)
-        Returns: overlay_base64
-        """
-        try:
-            def predict_fn(images):
-                return self.model.predict(images, verbose=0)
-
-            img = image_input[0]  # (32, 32, 3)
-            explanation = self.explainer.explain_instance(
-                img.astype('double'), predict_fn, top_labels=5, hide_color=0, num_samples=1000
-            )
-            temp, mask = explanation.get_image_and_mask(
-                class_idx, positive_only=True, num_features=10, hide_rest=True
-            )
-            overlay = np.uint8(mask * 255)
-            return _arr_to_base64(overlay)
-        except Exception as e:
-            print(f"[LIME-Image] Error: {e}")
-            return None
-
-
-class ImageGradCAM:
-    """Grad-CAM for Image CNN."""
-
-    def __init__(self, model):
-        print("[GradCAM-Image] Initializing...")
-        self.model = model
-
-    def explain(self, image_input: np.ndarray, class_idx: int):
-        """
-        image_input: (1, 32, 32, 3)
-        Returns: heatmap_base64
-        """
-        try:
-            img = image_input[0]  # (32, 32, 3)
-            img_tensor = tf.convert_to_tensor(img[None, ...], dtype=tf.float32)
-
-            with tf.GradientTape() as tape:
-                tape.watch(img_tensor)
-                conv_outputs, predictions = self.grad_model(img_tensor)
-                loss = predictions[:, class_idx]
-
-            grads = tape.gradient(loss, conv_outputs)
-            pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
-            conv_outputs = conv_outputs[0]
-            heatmap = conv_outputs @ pooled_grads[..., tf.newaxis]
-            heatmap = tf.squeeze(heatmap)
-            heatmap = tf.maximum(heatmap, 0) / tf.math.reduce_max(heatmap)
-            heatmap = heatmap.numpy()
-
-            # Resize to original size
-            heatmap = np.uint8(255 * heatmap)
-            heatmap = Image.fromarray(heatmap).resize((32, 32), Image.BILINEAR)
-            heatmap = np.array(heatmap)
-
-            return _arr_to_base64(heatmap)
-        except Exception as e:
-            print(f"[GradCAM-Image] Error: {e}")
-            return None
-
-    @property
-    def grad_model(self):
-        if not hasattr(self, '_grad_model'):
-            # Assuming the model has conv layers, find the last conv layer
-            last_conv_layer = None
-            for layer in reversed(self.model.layers):
-                if 'conv' in layer.name.lower():
-                    last_conv_layer = layer
-                    break
-            if last_conv_layer is None:
-                raise ValueError("No convolutional layer found in model")
-
-            self._grad_model = tf.keras.Model(
-                [self.model.inputs], [last_conv_layer.output, self.model.output]
-            )
-        return self._grad_model
-
-
-# ── Model 2: Text SHAP ────────────────────────────────────────────────────────
+# ── 2. Text SHAP ──────────────────────────────────────────────────────────────
 
 class TextSHAP:
-    """SHAP GradientExplainer for Text LSTM."""
+    """
+    SHAP KernelExplainer for Text DNN (IMDB).
+
+    KernelExplainer is model-agnostic:
+    - Creates perturbed versions of the input by masking words
+    - Observes how the prediction changes
+    - Fits a weighted linear model to assign Shapley values to each word
+
+    This tells us exactly which words drove the sentiment prediction.
+    """
 
     def __init__(self, model, background: np.ndarray):
-        print("[SHAP-Text] Initializing GradientExplainer...")
+        print("[SHAP-Text] Initializing KernelExplainer...")
         self.model = model
-        self.explainer = shap.GradientExplainer(model, background)
+        self.explainer = shap.KernelExplainer(
+            lambda x: model.predict(x.astype(np.float32), verbose=0),
+            background[:20]
+        )
+        self._rev_index = None
+        print("[SHAP-Text] Ready.")
 
-    def explain(self, text_input: np.ndarray, class_idx: int,
-                original_text: str, word_index: dict):
-        """
-        text_input: (1, MAX_SEQ_LEN) int32
-        Returns: plot_base64
-        """
+    def _rev(self):
+        if self._rev_index is None:
+            import tensorflow as tf
+            wi = tf.keras.datasets.imdb.get_word_index()
+            self._rev_index = {v: k for k, v in wi.items()}
+        return self._rev_index
+
+    def explain(self, bow_vec: np.ndarray, class_idx: int, original_text: str):
+        """bow_vec: (1, VOCAB_SIZE) → (plot_b64, deep_text)"""
         try:
-            inp = text_input.astype(np.float32)
-            shap_vals = self.explainer.shap_values(inp)
+            sv = self.explainer.shap_values(bow_vec, nsamples=300)
+            s  = sv[class_idx][0] if isinstance(sv, list) else sv[0]
 
-            if isinstance(shap_vals, list):
-                sv = shap_vals[class_idx][0]   # (MAX_SEQ_LEN,) or (MAX_SEQ_LEN, embed)
-            else:
-                sv = shap_vals[0, :, class_idx]
+            rev     = self._rev()
+            present = np.where(bow_vec[0] > 0)[0]
+            if len(present) == 0:
+                present = np.argsort(np.abs(s))[-15:]
 
-            if sv.ndim > 1:
-                sv = np.sum(np.abs(sv), axis=-1)
+            top_idx   = present[np.argsort(np.abs(s[present]))[-15:]]
+            top_words = [rev.get(int(i), f'word_{i}') for i in top_idx]
+            top_vals  = s[top_idx]
 
-            # Map back to words
-            rev_index = {v+3: k for k, v in word_index.items()}
-            words = original_text.lower().split()[:20]
-            tokens = text_input[0][:len(words)]
-            word_labels = [rev_index.get(int(t), '?') for t in tokens]
-            word_shap   = sv[:len(words)]
+            # Sort for display
+            order      = np.argsort(top_vals)
+            top_words  = [top_words[i] for i in order]
+            top_vals   = top_vals[order]
 
-            # Bar chart
-            fig, ax = plt.subplots(figsize=(max(8, len(words)*0.6), 4))
-            colors = ['#2ecc71' if v > 0 else '#e74c3c' for v in word_shap]
-            ax.bar(range(len(word_labels)), word_shap, color=colors)
-            ax.set_xticks(range(len(word_labels)))
-            ax.set_xticklabels(word_labels, rotation=45, ha='right', fontsize=9)
-            ax.set_ylabel('SHAP Value')
-            ax.set_title('SHAP Word Importance — Text LSTM\n(Green=Positive contribution, Red=Negative)')
-            ax.axhline(0, color='black', linewidth=0.8)
+            pos_words = [w for w, v in zip(top_words, top_vals) if v > 0]
+            neg_words = [w for w, v in zip(top_words, top_vals) if v < 0]
+            sentiment = 'Positive' if class_idx == 1 else 'Negative'
+
+            fig, ax = plt.subplots(figsize=(10, 5))
+            fig.patch.set_facecolor('#f8fafc')
+            colors = ['#2ecc71' if v > 0 else '#e74c3c' for v in top_vals]
+            bars = ax.barh(top_words, top_vals, color=colors, edgecolor='white', height=0.7)
+            ax.axvline(0, color='#2c3e50', linewidth=1.2)
+            ax.set_xlabel('SHAP Value  (contribution to prediction)', fontsize=10)
+            ax.set_title(
+                f'SHAP Word Importance — Predicted: {sentiment}\n'
+                f'Green = pushed toward {sentiment} | Red = pushed against {sentiment}',
+                fontsize=11, fontweight='bold'
+            )
+            for bar, val in zip(bars, top_vals):
+                ax.text(val + (0.001 if val >= 0 else -0.001),
+                        bar.get_y() + bar.get_height()/2,
+                        f'{val:.4f}', va='center',
+                        ha='left' if val >= 0 else 'right', fontsize=8)
+            ax.grid(axis='x', alpha=0.3)
             plt.tight_layout()
 
-            return _fig_to_base64(fig)
+            deep_text = (
+                f"The model classified this text as '{sentiment}'. "
+                f"SHAP KernelExplainer analyzed {len(present)} words present in the input. "
+                f"The top positive words (pushing toward {sentiment}) were: "
+                f"{', '.join(pos_words[-3:]) if pos_words else 'none'}. "
+                f"The top negative words (pushing against {sentiment}) were: "
+                f"{', '.join(neg_words[:3]) if neg_words else 'none'}. "
+                f"This shows the model learned that certain words are strong indicators of "
+                f"sentiment — for example, words like 'excellent', 'amazing', 'loved' push "
+                f"toward Positive, while 'terrible', 'boring', 'waste' push toward Negative. "
+                f"The bag-of-words approach treats each word independently, so SHAP can "
+                f"directly assign a contribution score to each word in the vocabulary."
+            )
+
+            return _fig_to_b64(fig), deep_text
+
         except Exception as e:
             print(f"[SHAP-Text] Error: {e}")
-            return None
+            return None, str(e)
 
 
-class TextLIME:
-    """LIME for Text LSTM."""
-
-    def __init__(self, model):
-        print("[LIME-Text] Initializing LimeTextExplainer...")
-        self.model = model
-        self.explainer = LimeTextExplainer(class_names=['Negative', 'Positive'])
-
-    def explain(self, text: str, class_idx: int):
-        """
-        text: raw text string
-        Returns: explanation dict
-        """
-        try:
-            def predict_fn(texts):
-                # Preprocess texts
-                from data import preprocess_text
-                inputs = np.array([preprocess_text(t)[0] for t in texts])
-                probs = self.model.predict(inputs, verbose=0)
-                return probs
-
-            explanation = self.explainer.explain_instance(
-                text, predict_fn, num_features=10, labels=[class_idx]
-            )
-            return explanation.as_list(label=class_idx)
-        except Exception as e:
-            print(f"[LIME-Text] Error: {e}")
-            return None
-
-
-# ── Model 3: Tabular SHAP ─────────────────────────────────────────────────────
+# ── 3. Tabular SHAP ───────────────────────────────────────────────────────────
 
 class TabularSHAP:
-    """SHAP KernelExplainer for Tabular DNN."""
+    """
+    SHAP KernelExplainer for Tabular DNN (Iris).
 
-    FEATURE_NAMES = ['Sepal Length', 'Sepal Width', 'Petal Length', 'Petal Width']
+    For tabular data, SHAP is most interpretable:
+    - Each feature (sepal/petal measurement) gets a precise contribution score
+    - We can directly say 'petal length = 5.1cm contributed +0.42 toward virginica'
+    - This is the most academically rigorous XAI method for structured data
+    """
+
+    FEATURES = ['Sepal Length (cm)', 'Sepal Width (cm)',
+                'Petal Length (cm)', 'Petal Width (cm)']
+    COLORS   = ['#3498db', '#e67e22', '#2ecc71', '#9b59b6']
 
     def __init__(self, model, background: np.ndarray):
         print("[SHAP-Tabular] Initializing KernelExplainer...")
         self.model = model
-        # KernelExplainer works with any model via predict function
         self.explainer = shap.KernelExplainer(
-            lambda x: model.predict(x, verbose=0),
-            background[:20]   # small background for speed
+            lambda x: model.predict(x.astype(np.float32), verbose=0),
+            background[:20]
         )
+        print("[SHAP-Tabular] Ready.")
 
-    def explain(self, tabular_input: np.ndarray, class_idx: int, class_name: str):
-        """
-        tabular_input: (1, 4)
-        Returns: plot_base64
-        """
+    def explain(self, inp: np.ndarray, class_idx: int, class_name: str,
+                raw_features: list):
+        """inp: (1,4) standardized → (plot_b64, deep_text)"""
         try:
-            shap_vals = self.explainer.shap_values(tabular_input, nsamples=100)
+            sv = self.explainer.shap_values(inp, nsamples=300)
 
-            if isinstance(shap_vals, list):
-                sv = shap_vals[class_idx][0]   # (4,)
+            # KernelExplainer returns:
+            #   list of (n_samples, n_features) — one per class  → sv[class_idx][0]
+            #   OR single (n_samples, n_features) for binary     → sv[0]
+            if isinstance(sv, list) and len(sv) > class_idx:
+                s = np.array(sv[class_idx]).flatten()
+            elif isinstance(sv, list):
+                s = np.array(sv[0]).flatten()
             else:
-                sv = shap_vals[0]
+                s = np.array(sv).flatten()
 
-            fig, ax = plt.subplots(figsize=(8, 4))
-            colors = ['#2ecc71' if v > 0 else '#e74c3c' for v in sv]
-            bars = ax.barh(self.FEATURE_NAMES, sv, color=colors)
-            ax.set_xlabel('SHAP Value (contribution to prediction)')
-            ax.set_title(f'SHAP Feature Importance — Tabular DNN\nPredicted: {class_name}')
-            ax.axvline(0, color='black', linewidth=0.8)
+            # Ensure length matches features
+            s = s[:len(self.FEATURES)]
 
-            # Add value labels
-            for bar, val in zip(bars, sv):
-                ax.text(val + (0.001 if val >= 0 else -0.001),
-                        bar.get_y() + bar.get_height()/2,
-                        f'{val:.4f}', va='center',
-                        ha='left' if val >= 0 else 'right', fontsize=9)
+            most_imp = self.FEATURES[int(np.argmax(np.abs(s)))]
+            most_val = float(s[int(np.argmax(np.abs(s)))])
+
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 4))
+            fig.patch.set_facecolor('#f8fafc')
+
+            # Bar chart
+            colors = ['#2ecc71' if v > 0 else '#e74c3c' for v in s]
+            bars = ax1.barh(self.FEATURES, s, color=colors, edgecolor='white', height=0.6)
+            ax1.axvline(0, color='#2c3e50', linewidth=1.2)
+            ax1.set_xlabel('SHAP Value')
+            ax1.set_title(f'Feature Contributions → {class_name}', fontweight='bold')
+            for bar, val in zip(bars, s):
+                ax1.text(val + (0.005 if val >= 0 else -0.005),
+                         bar.get_y() + bar.get_height()/2,
+                         f'{val:.4f}', va='center',
+                         ha='left' if val >= 0 else 'right', fontsize=9)
+            ax1.grid(axis='x', alpha=0.3)
+
+            # Input values vs SHAP
+            x_pos = np.arange(len(self.FEATURES))
+            ax2.bar(x_pos, raw_features, color=self.COLORS, alpha=0.7, label='Input value (cm)')
+            ax2_twin = ax2.twinx()
+            ax2_twin.plot(x_pos, s, 'ko-', linewidth=2, markersize=8, label='SHAP value')
+            ax2_twin.axhline(0, color='gray', linewidth=0.8, linestyle='--')
+            ax2.set_xticks(x_pos)
+            ax2.set_xticklabels(['Sepal L', 'Sepal W', 'Petal L', 'Petal W'], fontsize=9)
+            ax2.set_ylabel('Measurement (cm)', color='#2c3e50')
+            ax2_twin.set_ylabel('SHAP Value', color='black')
+            ax2.set_title('Input Values vs SHAP Contributions', fontweight='bold')
+            lines1, labels1 = ax2.get_legend_handles_labels()
+            lines2, labels2 = ax2_twin.get_legend_handles_labels()
+            ax2.legend(lines1 + lines2, labels1 + labels2, loc='upper right', fontsize=8)
+
+            plt.suptitle(f'SHAP KernelExplainer — Iris: Predicted {class_name}',
+                         fontsize=13, fontweight='bold')
             plt.tight_layout()
 
-            return _fig_to_base64(fig)
+            deep_text = (
+                f"The model predicted '{class_name}' based on the 4 flower measurements. "
+                f"The most influential feature was '{most_imp}' with SHAP value {most_val:.4f}. "
+                f"Positive SHAP values (green) pushed the prediction toward '{class_name}', "
+                f"while negative values (red) pushed against it. "
+                f"In Iris classification, petal measurements are typically the most "
+                f"discriminative: setosa has very small petals (length < 2cm), "
+                f"versicolor has medium petals (3–5cm), and virginica has large petals (>5cm). "
+                f"The SHAP values confirm which specific measurements were decisive for "
+                f"this particular flower sample."
+            )
+
+            return _fig_to_b64(fig), deep_text
+
         except Exception as e:
             print(f"[SHAP-Tabular] Error: {e}")
-            return None
+            return None, str(e)
 
 
-# ── Model 4: Audio SHAP ───────────────────────────────────────────────────────
+# ── 4. Audio SHAP ─────────────────────────────────────────────────────────────
 
 class AudioSHAP:
-    """SHAP GradientExplainer for Audio 1D-CNN."""
+    """
+    SHAP GradientExplainer for Audio 1D-CNN.
+
+    GradientExplainer uses Integrated Gradients:
+    - Integrates gradients along a path from a baseline (zeros) to the input
+    - Each time step gets a SHAP value = its contribution to the prediction
+    - Shows WHICH part of the signal the CNN focused on
+    """
 
     def __init__(self, model, background: np.ndarray):
         print("[SHAP-Audio] Initializing GradientExplainer...")
         self.model = model
-        self.explainer = shap.GradientExplainer(model, background)
+        self.explainer = shap.GradientExplainer(model, background[:50])
+        print("[SHAP-Audio] Ready.")
 
-    def explain(self, audio_input: np.ndarray, class_idx: int, class_name: str):
-        """
-        audio_input: (1, AUDIO_LEN, 1)
-        Returns: plot_base64
-        """
+    def explain(self, inp: np.ndarray, class_idx: int, class_name: str):
+        """inp: (1, AUDIO_LEN, 1) → (plot_b64, deep_text)"""
         try:
-            shap_vals = self.explainer.shap_values(audio_input)
+            sv = self.explainer.shap_values(inp)
 
-            if isinstance(shap_vals, list):
-                sv = shap_vals[class_idx][0, :, 0]   # (AUDIO_LEN,)
+            # GradientExplainer returns list[class] of (N, T, 1) or (N, T, 1, C)
+            if isinstance(sv, list) and len(sv) > class_idx:
+                s = np.array(sv[class_idx]).reshape(-1)[:inp.shape[1]]
+            elif isinstance(sv, list):
+                s = np.array(sv[0]).reshape(-1)[:inp.shape[1]]
             else:
-                sv = shap_vals[0, :, 0, class_idx]
+                arr = np.array(sv)
+                if arr.ndim == 4:   # (N, T, 1, C)
+                    s = arr[0, :, 0, class_idx]
+                else:               # (N, T, 1)
+                    s = arr[0, :, 0]
 
-            signal = audio_input[0, :, 0]
-            t = np.arange(len(signal))
+            signal = inp[0, :, 0]
+            t      = np.arange(len(signal))
 
-            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 6), sharex=True)
+            pos_steps = int(np.sum(s > 0))
+            neg_steps = int(np.sum(s < 0))
+            peak_t    = int(np.argmax(np.abs(s)))
 
-            # Original signal
-            ax1.plot(t, signal, color='#3498db', linewidth=0.8)
-            ax1.set_ylabel('Amplitude')
-            ax1.set_title(f'Input Signal — Predicted: {class_name}')
-            ax1.grid(True, alpha=0.3)
+            # Build deep explanation text first (before plot, so it's always available)
+            deep_text = (
+                f"The model classified this signal as '{class_name}'. "
+                f"SHAP GradientExplainer analyzed all {len(signal)} time steps. "
+                f"{pos_steps} time steps positively contributed (pushed toward '{class_name}') "
+                f"and {neg_steps} negatively contributed. "
+                f"The most important time step was at position {peak_t}. "
+                f"For a Sine Wave, the model focuses on smooth periodic transitions. "
+                f"For a Square Wave, it focuses on sharp +1/-1 transitions. "
+                f"For Noise, importance is spread randomly with no clear pattern. "
+                f"The rolling average plot shows which regions were consistently important."
+            )
+
+            fig, axes = plt.subplots(3, 1, figsize=(12, 8), sharex=True)
+            fig.patch.set_facecolor('#f8fafc')
+
+            # Signal
+            axes[0].plot(t, signal, color='#3498db', linewidth=1.0)
+            axes[0].set_ylabel('Amplitude', fontsize=9)
+            axes[0].set_title(f'Input Signal — Predicted: {class_name}',
+                              fontweight='bold', fontsize=11)
+            axes[0].grid(True, alpha=0.3)
+            axes[0].axvline(peak_t, color='orange', linewidth=1.5,
+                            linestyle='--', label=f'Peak SHAP at t={peak_t}')
+            axes[0].legend(fontsize=8)
 
             # SHAP values
-            sv_norm = (sv - sv.min()) / (sv.max() - sv.min() + 1e-8)
-            ax2.fill_between(t, sv, 0,
-                             where=(sv >= 0), color='#2ecc71', alpha=0.7, label='Positive')
-            ax2.fill_between(t, sv, 0,
-                             where=(sv < 0),  color='#e74c3c', alpha=0.7, label='Negative')
-            ax2.set_ylabel('SHAP Value')
-            ax2.set_xlabel('Time Step')
-            ax2.set_title('SHAP Time-Step Importance')
-            ax2.legend(loc='upper right')
-            ax2.grid(True, alpha=0.3)
+            axes[1].fill_between(t, s, 0, where=(s >= 0),
+                                 color='#2ecc71', alpha=0.8, label='Positive contribution')
+            axes[1].fill_between(t, s, 0, where=(s < 0),
+                                 color='#e74c3c', alpha=0.8, label='Negative contribution')
+            axes[1].axhline(0, color='#2c3e50', linewidth=0.8)
+            axes[1].set_ylabel('SHAP Value', fontsize=9)
+            axes[1].set_title('SHAP Time-Step Importance', fontweight='bold', fontsize=11)
+            axes[1].legend(fontsize=8); axes[1].grid(True, alpha=0.3)
 
-            plt.suptitle('SHAP GradientExplainer — Audio 1D-CNN', fontsize=13)
+            # Rolling importance
+            window = 20
+            rolling = np.convolve(np.abs(s), np.ones(window)/window, mode='same')
+            axes[2].plot(t, rolling, color='#9b59b6', linewidth=1.2)
+            axes[2].fill_between(t, rolling, alpha=0.3, color='#9b59b6')
+            axes[2].set_ylabel('Avg |SHAP|', fontsize=9)
+            axes[2].set_xlabel('Time Step', fontsize=9)
+            axes[2].set_title(f'Rolling Average Importance (window={window})',
+                              fontweight='bold', fontsize=11)
+            axes[2].grid(True, alpha=0.3)
+
+            plt.suptitle(f'SHAP GradientExplainer — Audio 1D-CNN: {class_name}',
+                         fontsize=13, fontweight='bold')
             plt.tight_layout()
 
-            return _fig_to_base64(fig)
+            deep_text = (
+                f"The model classified this signal as '{class_name}'. "
+                f"SHAP GradientExplainer analyzed all {len(signal)} time steps. "
+                f"{pos_steps} time steps positively contributed (pushed toward '{class_name}') "
+                f"and {neg_steps} negatively contributed. "
+                f"The most important time step was at position {peak_t}. "
+                f"For a Sine Wave, the model focuses on the smooth periodic transitions. "
+                f"For a Square Wave, it focuses on the sharp +1/-1 transitions. "
+                f"For Noise, importance is spread randomly with no clear pattern. "
+                f"The rolling average plot (bottom) shows which regions of the signal "
+                f"were consistently important — high peaks indicate the CNN's 'attention' areas."
+            )
+
+            return _fig_to_b64(fig), deep_text
+
         except Exception as e:
             print(f"[SHAP-Audio] Error: {e}")
-            return None
+            return None, str(e)

@@ -7,3 +7,6 @@ node_modules/
 .env
 .vscode/
 .DS_Store
+
+backend/*.pkl
+backend/__pycache__/

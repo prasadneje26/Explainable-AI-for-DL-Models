@@ -33,7 +33,7 @@ export default function ImageModel({ api, onResult, onError, onLoading, loading 
     <div className="model-form">
       <h2>🖼️ Image CNN</h2>
       <p style={{color:'#64748b',fontSize:'0.875rem',marginTop:0}}>
-        Upload any image — classified into one of 10 CIFAR-10 categories
+        Upload a handwritten digit image — recognized as 0 through 9
       </p>
 
       <div className="file-drop" onClick={() => ref.current?.click()}>
@@ -52,7 +52,8 @@ export default function ImageModel({ api, onResult, onError, onLoading, loading 
       </button>
 
       <div style={{marginTop:'1rem',fontSize:'0.8rem',color:'#64748b'}}>
-        <strong>Classes:</strong> airplane, automobile, bird, cat, deer, dog, frog, horse, ship, truck
+        <strong>Classes:</strong> Digits 0, 1, 2, 3, 4, 5, 6, 7, 8, 9
+        <br/><strong>Tip:</strong> Draw a digit on paper, take a photo, or use any MNIST-style image
       </div>
     </div>
   );
