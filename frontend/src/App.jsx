@@ -8,7 +8,7 @@ import ResultPanel from './components/ResultPanel';
 import ExplanationView from './components/ExplanationView';
 import './App.css';
 
-const API = 'http://localhost:8000';
+const API = '';
 
 const TABS = [
   { id: 'image',   label: 'Image CNN',     icon: '🖼️',  desc: 'CIFAR-10 Classification' },
