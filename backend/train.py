@@ -13,7 +13,7 @@ from tensorflow.keras import callbacks
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
 from models import get_model, MODEL_SAVE_PATHS
-from data import load_mnist, load_imdb_bow, load_iris_data, generate_audio_dataset
+from data import load_cifar10, load_imdb_sequences, load_iris_data, generate_audio_dataset
 
 
 def cbs(name):
@@ -28,8 +28,8 @@ def cbs(name):
 
 
 def train_image():
-    print("\n=== Image CNN — MNIST ===")
-    (x_tr, y_tr), (x_te, y_te) = load_mnist()
+    print("\n=== Image CNN — CIFAR-10 ===")
+    (x_tr, y_tr), (x_te, y_te) = load_cifar10()
 
     # Data augmentation: slight rotation and shift to improve generalization
     aug = ImageDataGenerator(rotation_range=10, width_shift_range=0.1,
@@ -51,8 +51,8 @@ def train_image():
 
 
 def train_text():
-    print("\n=== Text DNN — IMDB ===")
-    (x_tr, y_tr), (x_te, y_te) = load_imdb_bow()
+    print("\n=== Text LSTM — IMDB ===")
+    (x_tr, y_tr), (x_te, y_te) = load_imdb_sequences()
 
     m = get_model('text')
     m.compile(optimizer=tf.keras.optimizers.Adam(1e-3),

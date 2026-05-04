@@ -27,10 +27,12 @@ AUDIO_CLASSES    = ['Sine Wave', 'Square Wave', 'Noise']
 # Keep old name for backwards compatibility
 MNIST_CLASSES = CIFAR10_CLASSES
 
-VOCAB_SIZE    = 10000
-SEQUENCE_LEN  = 200    # LSTM sequence length (matches saved model input shape)
-AUDIO_LEN     = 1000   # Matches saved audio model input shape
-SCALER_PATH   = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'iris_scaler.pkl')
+NUM_CIFAR10 = 10
+NUM_IMDB    = 2
+VOCAB_SIZE  = 10000
+SEQUENCE_LEN = 200    # LSTM sequence length (matches saved model input shape)
+AUDIO_LEN   = 1000   # Matches saved audio model input shape
+SCALER_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'iris_scaler.pkl')
 
 # ── Cached globals ─────────────────────────────────────────────────────────────
 
@@ -58,8 +60,18 @@ def load_cifar10():
     (x_tr, y_tr), (x_te, y_te) = tf.keras.datasets.cifar10.load_data()
     x_tr = x_tr.astype(np.float32) / 255.0         # (50000, 32, 32, 3)
     x_te = x_te.astype(np.float32) / 255.0
-    y_tr = tf.keras.utils.to_categorical(y_tr, 10)
-    y_te = tf.keras.utils.to_categorical(y_te, 10)
+    y_tr = tf.keras.utils.to_categorical(y_tr, NUM_CIFAR10)
+    y_te = tf.keras.utils.to_categorical(y_te, NUM_CIFAR10)
+    return (x_tr, y_tr), (x_te, y_te)
+
+
+def load_imdb_sequences():
+    (x_tr, y_tr), (x_te, y_te) = tf.keras.datasets.imdb.load_data(num_words=VOCAB_SIZE)
+    from tensorflow.keras.preprocessing.sequence import pad_sequences
+    x_tr = pad_sequences(x_tr, maxlen=SEQUENCE_LEN, padding='pre', truncating='pre')
+    x_te = pad_sequences(x_te, maxlen=SEQUENCE_LEN, padding='pre', truncating='pre')
+    y_tr = tf.keras.utils.to_categorical(y_tr, NUM_IMDB)
+    y_te = tf.keras.utils.to_categorical(y_te, NUM_IMDB)
     return (x_tr, y_tr), (x_te, y_te)
 
 

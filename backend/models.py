@@ -25,13 +25,13 @@ AUDIO_LEN   = 1000
 
 def build_image_cnn():
     """
-    CNN for MNIST — 3 conv blocks with BatchNorm for stable training.
-    Input : (28,28,1) grayscale [0,1]
+    CNN for CIFAR-10 — 3 conv blocks with BatchNorm for stable training.
+    Input : (32,32,3) RGB [0,1]
     Output: 10-class softmax
-    Target: ~99.5% accuracy
+    Target: ~85-90% accuracy
     """
     return models.Sequential([
-        layers.Input(shape=(28, 28, 1)),
+        layers.Input(shape=(32, 32, 3)),
 
         layers.Conv2D(32, 3, padding='same'), layers.BatchNormalization(), layers.Activation('relu'),
         layers.Conv2D(32, 3, padding='same'), layers.BatchNormalization(), layers.Activation('relu'),
@@ -40,31 +40,33 @@ def build_image_cnn():
         layers.Conv2D(64, 3, padding='same'), layers.BatchNormalization(), layers.Activation('relu'),
         layers.Conv2D(64, 3, padding='same'), layers.BatchNormalization(), layers.Activation('relu'),
         layers.MaxPooling2D(2), layers.Dropout(0.25),
+
+        layers.Conv2D(128, 3, padding='same'), layers.BatchNormalization(), layers.Activation('relu'),
+        layers.Conv2D(128, 3, padding='same'), layers.BatchNormalization(), layers.Activation('relu'),
+        layers.MaxPooling2D(2), layers.Dropout(0.3),
 
         layers.Flatten(),
         layers.Dense(256, activation='relu'), layers.BatchNormalization(), layers.Dropout(0.4),
-        layers.Dense(NUM_MNIST, activation='softmax')
-    ], name='ImageCNN_MNIST')
+        layers.Dense(NUM_CIFAR10, activation='softmax')
+    ], name='ImageCNN_CIFAR10')
 
 
 def build_text_dnn():
     """
-    DNN for IMDB sentiment — wider layers + L2 regularization.
-    Input : (VOCAB_SIZE,) multi-hot bag-of-words
+    BiLSTM for IMDB sentiment.
+    Input : (SEQUENCE_LEN,) integer word-ID sequence
     Output: 2-class softmax (Negative / Positive)
-    Target: ~90% accuracy
+    Target: ~87% accuracy
     """
-    reg = tf.keras.regularizers.l2(1e-4)
     return models.Sequential([
-        layers.Input(shape=(VOCAB_SIZE,)),
-        layers.Dense(256, activation='relu', kernel_regularizer=reg),
-        layers.Dropout(0.5),
-        layers.Dense(128, activation='relu', kernel_regularizer=reg),
+        layers.Input(shape=(SEQUENCE_LEN,), dtype='int32'),
+        layers.Embedding(VOCAB_SIZE, 64, input_length=SEQUENCE_LEN),
+        layers.Bidirectional(layers.LSTM(128, return_sequences=True)),
+        layers.Bidirectional(layers.LSTM(64)),
+        layers.Dense(64, activation='relu'),
         layers.Dropout(0.4),
-        layers.Dense(64,  activation='relu', kernel_regularizer=reg),
-        layers.Dropout(0.3),
         layers.Dense(NUM_IMDB, activation='softmax')
-    ], name='TextDNN_IMDB')
+    ], name='TextLSTM_IMDB')
 
 
 def build_tabular_dnn():

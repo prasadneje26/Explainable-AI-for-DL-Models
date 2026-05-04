@@ -1,8 +1,10 @@
 backend/data/
 backend/saved_*.keras
 backend/saved_*.pt
+backend/venv/
 __pycache__/
 *.pyc
+*.mp4
 node_modules/
 .env
 .vscode/
